@@ -3,7 +3,7 @@ import type { Config } from "@react-router/dev/config";
 import { sentryOnBuildEnd } from "@sentry/react-router";
 import { vercelPreset } from "@vercel/react-router/vite";
 import { readdir } from "node:fs/promises";
-import path from "node:path";
+import path from "path";
 
 declare module "react-router" {
   interface Future {
@@ -18,7 +18,7 @@ const urls = (
   .map((file) => `/blog/${file.replace(".mdx", "")}`);
 
 export default {
-  ssr: true,
+  ssr: false,
   async prerender() {
     return [
       "/legal/terms-of-service",
