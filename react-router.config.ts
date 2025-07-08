@@ -18,17 +18,17 @@ const urls = (
   .map((file) => `/blog/${file.replace(".mdx", "")}`);
 
 export default {
-  ssr: false,
-  async prerender() {
-    return [
-      "/legal/terms-of-service",
-      "/legal/privacy-policy",
-      "/blog",
-      "/sitemap.xml",
-      "/robots.txt",
-      ...urls,
-    ];
-  },
+  ssr: true,
+  // async prerender() {
+  //   return [
+  //     "/legal/terms-of-service",
+  //     "/legal/privacy-policy",
+  //     "/blog",
+  //     "/sitemap.xml",
+  //     "/robots.txt",
+  //     ...urls,
+  //   ];
+  // },
   presets: [
     ...(process.env.VERCEL_ENV === "production" ? [vercelPreset()] : []),
   ],

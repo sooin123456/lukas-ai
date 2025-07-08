@@ -4,14 +4,14 @@
   "type": "module",
   "version": "1.0",
   "scripts": {
-    "prebuild": "npm run typecheck && npm run db:typegen",
+    "prebuild": "npm run typecheck",
     "build": "react-router build",
     "dev": "react-router dev",
     "start": "react-router-serve ./build/server/index.js",
     "typecheck": "react-router typegen && tsc",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:typegen": "supabase gen types typescript --project-id <project-id> > database.types.ts",
+    "db:typegen": "supabase gen types typescript --project-id xylezpqstzqbtcckaabh > database.types.ts",
     "test:e2e": "npx playwright test",
     "test:e2e:ui": "npx playwright test --ui",
     "format": "prettier --write \"app/**/*.{ts,tsx,js,jsx,json,css,md,mdx}\""
