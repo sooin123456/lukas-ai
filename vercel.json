@@ -3,15 +3,10 @@
   "outputDirectory": "build",
   "installCommand": "npm install",
   "framework": "react-router",
-  "functions": {
-    "app/entry.server.tsx": {
-      "maxDuration": 30
-    }
-  },
   "rewrites": [
     {
       "source": "/(.*)",
-      "destination": "/app/entry.server.tsx"
+      "destination": "/index.html"
     }
   ],
   "env": {
