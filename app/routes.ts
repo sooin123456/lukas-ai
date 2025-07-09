@@ -16,11 +16,6 @@ import {
 } from "@react-router/dev/routes";
 
 export default [
-  ...prefix("/debug", [
-    // You should delete this in production.
-    route("/sentry", "debug/sentry.tsx"),
-    route("/analytics", "debug/analytics.tsx"),
-  ]),
   // API Routes. Routes that export actions and loaders but no UI.
   ...prefix("/api", [
     ...prefix("/settings", [
