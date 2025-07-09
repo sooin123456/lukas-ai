@@ -207,50 +207,39 @@ export default function Meeting({ loaderData }: Route.ComponentProps) {
       const speaker = speakers[Math.floor(Math.random() * speakers.length)];
       const text = sampleTexts[index % sampleTexts.length];
       
-      const transcript: Transcript = {
+      const newTranscript: Transcript = {
         id: Date.now().toString(),
         speakerName: speaker,
         content: text,
         timestamp: new Date(),
-        confidence: Math.floor(Math.random() * 30) + 70, // 70-100%
+        confidence: Math.floor(Math.random() * 20) + 80, // 80-100%
       };
 
-      setTranscripts(prev => [...prev, transcript]);
+      setTranscripts(prev => [...prev, newTranscript]);
       setCurrentSpeaker(speaker);
       index++;
-    }, 5000); // Every 5 seconds
+    }, 3000);
   };
 
   /**
    * Generate meeting summary
    */
   const generateSummary = async () => {
-    const allText = transcripts.map(t => `${t.speakerName}: ${t.content}`).join('\n');
+    if (transcripts.length === 0) return;
+
+    // Simulate AI summary generation
+    setSummary("회의에서 주요 논의사항과 결정사항을 정리한 요약입니다.");
     
-    fetcher.submit(
-      { 
-        action: 'generate_summary',
-        content: allText,
-        meetingTitle 
-      },
-      { method: 'post', action: '/api/lukas-ai/meeting' }
-    );
+    // Simulate action items extraction
+    setActionItems([
+      "다음 주까지 프로젝트 마무리",
+      "팀 회의 일정 조율",
+      "예산 검토 및 보고서 작성"
+    ]);
   };
 
   /**
-   * Handle summary response
-   */
-  useEffect(() => {
-    if (fetcher.data && fetcher.state === "idle") {
-      if (fetcher.data.success) {
-        setSummary(fetcher.data.summary);
-        setActionItems(fetcher.data.actionItems || []);
-      }
-    }
-  }, [fetcher.data, fetcher.state]);
-
-  /**
-   * Format time
+   * Format time in MM:SS
    */
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -259,12 +248,14 @@ export default function Meeting({ loaderData }: Route.ComponentProps) {
   };
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">실시간 회의</h1>
-        <p className="text-muted-foreground">
-          실시간 음성 녹음, 화자 구분, 자동 요약 기능을 제공합니다.
-        </p>
+    <div className="container mx-auto py-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">실시간 회의</h1>
+          <p className="text-muted-foreground">
+            AI가 실시간으로 회의를 기록하고 요약합니다
+          </p>
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-6">
@@ -274,7 +265,7 @@ export default function Meeting({ loaderData }: Route.ComponentProps) {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <UsersIcon className="h-5 w-5" />
+                <Users className="h-5 w-5" />
                 회의 설정
               </CardTitle>
             </CardHeader>
@@ -305,7 +296,7 @@ export default function Meeting({ loaderData }: Route.ComponentProps) {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <MicIcon className="h-5 w-5" />
+                <Mic className="h-5 w-5" />
                 녹음 제어
               </CardTitle>
             </CardHeader>
@@ -322,7 +313,7 @@ export default function Meeting({ loaderData }: Route.ComponentProps) {
                     className="flex-1"
                     disabled={!meetingTitle}
                   >
-                    <MicIcon className="mr-2 h-4 w-4" />
+                    <Mic className="mr-2 h-4 w-4" />
                     녹음 시작
                   </Button>
                 ) : (
@@ -334,12 +325,12 @@ export default function Meeting({ loaderData }: Route.ComponentProps) {
                     >
                       {isPaused ? (
                         <>
-                          <PlayIcon className="mr-2 h-4 w-4" />
+                          <Play className="mr-2 h-4 w-4" />
                           재개
                         </>
                       ) : (
                         <>
-                          <PauseIcon className="mr-2 h-4 w-4" />
+                          <Pause className="mr-2 h-4 w-4" />
                           일시정지
                         </>
                       )}
@@ -349,7 +340,7 @@ export default function Meeting({ loaderData }: Route.ComponentProps) {
                       variant="destructive"
                       className="flex-1"
                     >
-                      <SquareIcon className="mr-2 h-4 w-4" />
+                      <Square className="mr-2 h-4 w-4" />
                       녹음 종료
                     </Button>
                   </>
@@ -374,7 +365,7 @@ export default function Meeting({ loaderData }: Route.ComponentProps) {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <ClockIcon className="h-5 w-5" />
+                <Clock className="h-5 w-5" />
                 실시간 상태
               </CardTitle>
             </CardHeader>
@@ -406,7 +397,7 @@ export default function Meeting({ loaderData }: Route.ComponentProps) {
           <Card className="h-full">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <FileTextIcon className="h-5 w-5" />
+                <FileText className="h-5 w-5" />
                 실시간 회의록
               </CardTitle>
             </CardHeader>
@@ -415,7 +406,7 @@ export default function Meeting({ loaderData }: Route.ComponentProps) {
                 <div className="space-y-4">
                   {transcripts.length === 0 ? (
                     <div className="text-center text-muted-foreground py-8">
-                      <MicIcon className="mx-auto h-12 w-12 mb-4 opacity-50" />
+                      <Mic className="mx-auto h-12 w-12 mb-4 opacity-50" />
                       <p>녹음을 시작하면 실시간 회의록이 표시됩니다.</p>
                     </div>
                   ) : (
@@ -449,7 +440,7 @@ export default function Meeting({ loaderData }: Route.ComponentProps) {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <CheckCircleIcon className="h-5 w-5" />
+                <CheckCircle2 className="h-5 w-5" />
                 회의 요약
               </CardTitle>
             </CardHeader>
@@ -467,7 +458,7 @@ export default function Meeting({ loaderData }: Route.ComponentProps) {
                   <ul className="space-y-2">
                     {actionItems.map((item, index) => (
                       <li key={index} className="flex items-center gap-2 text-sm">
-                        <CheckCircleIcon className="h-4 w-4 text-green-600" />
+                        <CheckCircle2 className="h-4 w-4 text-green-500" />
                         {item}
                       </li>
                     ))}
@@ -475,18 +466,6 @@ export default function Meeting({ loaderData }: Route.ComponentProps) {
                 </div>
               )}
             </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Loading State */}
-      {fetcher.state === "submitting" && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
-          <Card className="p-6">
-            <div className="flex items-center gap-3">
-              <LoaderIcon className="h-5 w-5 animate-spin" />
-              <span>회의 요약을 생성하고 있습니다...</span>
-            </div>
           </Card>
         </div>
       )}
