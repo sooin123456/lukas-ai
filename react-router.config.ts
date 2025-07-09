@@ -13,16 +13,9 @@ const urls = (
 
 export default {
   ssr: true,
-  // async prerender() {
-  //   return [
-  //     "/legal/terms-of-service",
-  //     "/legal/privacy-policy",
-  //     "/blog",
-  //     "/sitemap.xml",
-  //     "/robots.txt",
-  //     ...urls,
-  //   ];
-  // },
+  future: {
+    unstable_middleware: true,
+  },
   presets: [
     ...(process.env.VERCEL_ENV === "production" ? [vercelPreset()] : []),
   ],
