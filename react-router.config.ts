@@ -17,7 +17,7 @@ export default {
     unstable_middleware: true,
   },
   presets: [
-    ...(process.env.VERCEL_ENV === "production" ? [vercelPreset()] : []),
+    vercelPreset(),
   ],
   buildEnd: async ({ viteConfig, reactRouterConfig, buildManifest }) => {
     if (
