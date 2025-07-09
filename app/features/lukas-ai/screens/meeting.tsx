@@ -92,7 +92,7 @@ export async function loader({ request }: any) {
       endTime: meetingSessions.endTime,
       status: meetingSessions.status,
       participants: meetingSessions.participants,
-      recordingUrl: meetingSessions.recordingUrl,
+      settings: meetingSessions.settings,
     })
     .from(meetingSessions)
     .where(eq(meetingSessions.userId, user.id))
@@ -104,8 +104,9 @@ export async function loader({ request }: any) {
     .select({
       id: meetingTranscripts.id,
       meetingId: meetingTranscripts.meetingId,
-      speaker: meetingTranscripts.speaker,
-      text: meetingTranscripts.text,
+      speakerId: meetingTranscripts.speakerId,
+      speakerName: meetingTranscripts.speakerName,
+      content: meetingTranscripts.content,
       timestamp: meetingTranscripts.timestamp,
       confidence: meetingTranscripts.confidence,
     })
@@ -122,6 +123,8 @@ export async function loader({ request }: any) {
       summary: meetingSummaries.summary,
       keyPoints: meetingSummaries.keyPoints,
       actionItems: meetingSummaries.actionItems,
+      decisions: meetingSummaries.decisions,
+      nextSteps: meetingSummaries.nextSteps,
       created_at: meetingSummaries.created_at,
     })
     .from(meetingSummaries)
@@ -157,7 +160,7 @@ export async function action({ request }: any) {
           endTime: null,
           status: "active",
           participants,
-          recordingUrl: null,
+          settings: { recording: true, transcription: true },
         })
         .returning();
 
@@ -166,14 +169,12 @@ export async function action({ request }: any) {
 
     case "end_session": {
       const sessionId = formData.get("sessionId") as string;
-      const recordingUrl = formData.get("recordingUrl") as string;
 
       await db
         .update(meetingSessions)
         .set({
           endTime: new Date(),
-          status: "completed",
-          recordingUrl,
+          status: "ended",
         })
         .where(eq(meetingSessions.id, sessionId));
 
@@ -182,17 +183,19 @@ export async function action({ request }: any) {
 
     case "add_transcript": {
       const meetingId = formData.get("meetingId") as string;
-      const speaker = formData.get("speaker") as string;
-      const text = formData.get("text") as string;
+      const speakerId = formData.get("speakerId") as string;
+      const speakerName = formData.get("speakerName") as string;
+      const content = formData.get("content") as string;
       const timestamp = new Date(formData.get("timestamp") as string);
-      const confidence = parseFloat(formData.get("confidence") as string);
+      const confidence = parseInt(formData.get("confidence") as string);
 
       await db
         .insert(meetingTranscripts)
         .values({
           meetingId,
-          speaker,
-          text,
+          speakerId,
+          speakerName,
+          content,
           timestamp,
           confidence,
         });
@@ -205,6 +208,8 @@ export async function action({ request }: any) {
       const summary = formData.get("summary") as string;
       const keyPoints = formData.get("keyPoints") ? JSON.parse(formData.get("keyPoints") as string) : [];
       const actionItems = formData.get("actionItems") ? JSON.parse(formData.get("actionItems") as string) : [];
+      const decisions = formData.get("decisions") ? JSON.parse(formData.get("decisions") as string) : [];
+      const nextSteps = formData.get("nextSteps") as string;
 
       await db
         .insert(meetingSummaries)
@@ -213,6 +218,8 @@ export async function action({ request }: any) {
           summary,
           keyPoints,
           actionItems,
+          decisions,
+          nextSteps,
         });
 
       return { success: true };
@@ -401,7 +408,7 @@ export default function MeetingScreen() {
                     <h3 className="font-medium">{session.title}</h3>
                     <p className="text-sm text-gray-600">{session.description}</p>
                     <p className="text-xs text-gray-500">
-                      {new Date(session.startTime).toLocaleString()}
+                      {session.startTime && new Date(session.startTime).toLocaleString()}
                     </p>
                   </div>
                 ))
@@ -441,7 +448,7 @@ export default function MeetingScreen() {
                 <h3 className="font-medium mb-2">회의 요약</h3>
                 <p className="text-sm text-gray-600 line-clamp-3">{summary.summary}</p>
                 <p className="text-xs text-gray-500 mt-2">
-                  {new Date(summary.created_at).toLocaleString()}
+                  {summary.created_at && new Date(summary.created_at).toLocaleString()}
                 </p>
               </div>
             ))
