@@ -41,10 +41,6 @@ export default [
       ),
     ]),
     ...prefix("/blog", [route("/og", "features/blog/api/og.tsx")]),
-    ...prefix("/assistant", [
-      route("/chat", "features/lukas-ai/api/chat.tsx"),
-      route("/work-tools", "features/lukas-ai/api/work-tools.tsx"),
-    ]),
     ...prefix("/lukas-ai", [
       route("/meeting", "features/lukas-ai/api/meeting.tsx"),
       route("/documents", "features/lukas-ai/api/documents.tsx"),
@@ -102,21 +98,20 @@ export default [
     ]),
   ]),
 
-        layout("core/layouts/private.layout.tsx", { id: "private-dashboard" }, [
-        layout("features/users/layouts/dashboard.layout.tsx", [
-          ...prefix("/dashboard", [
-            index("features/users/screens/dashboard.tsx"),
-            route("/payments", "features/payments/screens/payments.tsx"),
-            route("/assistant", "features/lukas-ai/screens/chat.tsx"),
-            route("/work-tools", "features/lukas-ai/screens/work-tools.tsx"),
-            route("/meeting", "features/lukas-ai/screens/meeting.tsx"),
-            route("/documents", "features/lukas-ai/screens/documents.tsx"),
-            route("/schedule", "features/lukas-ai/screens/schedule.tsx"),
-            route("/analytics", "features/lukas-ai/screens/analytics.tsx"),
-          ]),
-          route("/account/edit", "features/users/screens/account.tsx"),
-        ]),
+  // Dashboard routes for authenticated users
+  layout("core/layouts/private.layout.tsx", { id: "private-dashboard" }, [
+    layout("features/users/layouts/dashboard.layout.tsx", [
+      ...prefix("/dashboard", [
+        index("features/users/screens/dashboard.tsx"),
+        route("/payments", "features/payments/screens/payments.tsx"),
+        route("/meeting", "features/lukas-ai/screens/meeting.tsx"),
+        route("/documents", "features/lukas-ai/screens/documents.tsx"),
+        route("/schedule", "features/lukas-ai/screens/schedule.tsx"),
+        route("/analytics", "features/lukas-ai/screens/analytics.tsx"),
       ]),
+      route("/account/edit", "features/users/screens/account.tsx"),
+    ]),
+  ]),
 
   ...prefix("/legal", [route("/:slug", "features/legal/screens/policy.tsx")]),
   layout("features/blog/layouts/blog.layout.tsx", [
