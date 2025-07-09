@@ -1,15 +1,15 @@
 import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
-import { eq, desc, and, gte, lte } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sum, count, avg } from "drizzle-orm";
 import { z } from "zod";
 
-import { db } from "~/core/db/drizzle-client.server";
+import db from "~/core/db/drizzle-client.server";
 import { requireUser } from "~/core/lib/guards.server";
 import { 
   calendarEvents, 
   automatedTasks, 
   taskExecutions, 
-  timeTracking,
+  timeTracking, 
   workflows 
 } from "~/features/lukas-ai/schema";
 
@@ -19,16 +19,12 @@ const calendarEventSchema = z.object({
   description: z.string().optional(),
   startTime: z.string().datetime("시작 시간을 입력해주세요"),
   endTime: z.string().datetime("종료 시간을 입력해주세요"),
-  type: z.enum(["meeting", "task", "deadline", "reminder"]).default("meeting"),
+  type: z.enum(["meeting", "task", "reminder", "deadline"]),
   priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
   location: z.string().optional(),
   attendees: z.array(z.string()).optional(),
-  recurrence: z.object({
-    type: z.enum(["none", "daily", "weekly", "monthly"]).default("none"),
-    interval: z.number().min(1).default(1),
-    endDate: z.string().datetime().optional(),
-  }).optional(),
-  reminders: z.array(z.number()).optional(), // Minutes before event
+  recurrence: z.record(z.any()).optional(),
+  reminders: z.array(z.record(z.any())).optional(),
   tags: z.array(z.string()).optional(),
 });
 
@@ -36,26 +32,11 @@ const calendarEventSchema = z.object({
 const automatedTaskSchema = z.object({
   name: z.string().min(1, "작업명을 입력해주세요"),
   description: z.string().optional(),
-  type: z.enum(["email", "report", "reminder", "data_processing"]),
+  type: z.enum(["email", "notification", "data_processing", "report_generation"]),
   trigger: z.enum(["schedule", "event", "condition"]),
-  triggerConfig: z.object({
-    schedule: z.string().optional(), // Cron expression
-    event: z.string().optional(), // Event type
-    condition: z.string().optional(), // Condition expression
-  }),
-  action: z.string().min(1, "실행할 작업을 입력해주세요"),
-  actionConfig: z.object({
-    email: z.object({
-      to: z.array(z.string()).optional(),
-      subject: z.string().optional(),
-      template: z.string().optional(),
-    }).optional(),
-    report: z.object({
-      type: z.string().optional(),
-      format: z.string().optional(),
-      recipients: z.array(z.string()).optional(),
-    }).optional(),
-  }),
+  triggerConfig: z.record(z.any()).optional(),
+  action: z.enum(["send_email", "create_notification", "update_data", "generate_report"]),
+  actionConfig: z.record(z.any()).optional(),
 });
 
 // Time tracking schema
@@ -63,7 +44,8 @@ const timeTrackingSchema = z.object({
   taskName: z.string().min(1, "작업명을 입력해주세요"),
   category: z.string().optional(),
   startTime: z.string().datetime("시작 시간을 입력해주세요"),
-  endTime: z.string().datetime("종료 시간을 입력해주세요"),
+  endTime: z.string().datetime("종료 시간을 입력해주세요").optional(),
+  duration: z.number().optional(),
   description: z.string().optional(),
   tags: z.array(z.string()).optional(),
 });
@@ -72,23 +54,15 @@ const timeTrackingSchema = z.object({
 const workflowSchema = z.object({
   name: z.string().min(1, "워크플로우명을 입력해주세요"),
   description: z.string().optional(),
-  steps: z.array(z.object({
-    id: z.string(),
-    name: z.string(),
-    type: z.string(),
-    config: z.record(z.any()),
-  })),
-  triggers: z.array(z.object({
-    type: z.string(),
-    config: z.record(z.any()),
-  })).optional(),
+  steps: z.array(z.record(z.any())).optional(),
+  triggers: z.array(z.record(z.any())).optional(),
 });
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
   const url = new URL(request.url);
-  const startDate = url.searchParams.get("start");
-  const endDate = url.searchParams.get("end");
+  const startDate = url.searchParams.get("startDate");
+  const endDate = url.searchParams.get("endDate");
   
   // Get calendar events
   let eventsQuery = db
@@ -113,17 +87,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
     .select()
     .from(automatedTasks)
     .where(eq(automatedTasks.userId, user.id))
-    .orderBy(desc(automatedTasks.createdAt));
+    .orderBy(desc(automatedTasks.created_at));
 
-  // Get recent task executions
+  // Get task executions
   const executions = await db
     .select()
     .from(taskExecutions)
-    .where(eq(taskExecutions.taskId, tasks[0]?.id || ""))
-    .orderBy(desc(taskExecutions.startTime))
-    .limit(10);
+    .where(eq(taskExecutions.userId, user.id))
+    .orderBy(desc(taskExecutions.executedAt))
+    .limit(20);
 
-  // Get time tracking data
+  // Get time tracking entries
   const timeEntries = await db
     .select()
     .from(timeTracking)
@@ -132,18 +106,18 @@ export async function loader({ request }: LoaderFunctionArgs) {
     .limit(20);
 
   // Get workflows
-  const workflows = await db
+  const workflowsData = await db
     .select()
     .from(workflows)
     .where(eq(workflows.userId, user.id))
-    .orderBy(desc(workflows.createdAt));
+    .orderBy(desc(workflows.created_at));
 
   return json({
     events,
     tasks,
     executions,
     timeEntries,
-    workflows,
+    workflows: workflowsData,
   });
 }
 
@@ -327,13 +301,11 @@ export async function action({ request }: ActionFunctionArgs) {
       }
 
       default:
-        return json({ error: "알 수 없는 액션입니다" }, { status: 400 });
+        return json({ error: "Invalid action" }, { status: 400 });
     }
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return json({ error: error.errors[0]?.message || "입력 데이터가 유효하지 않습니다" }, { status: 400 });
-    }
-    return json({ error: "서버 오류가 발생했습니다" }, { status: 500 });
+    console.error("Schedule action error:", error);
+    return json({ error: "Internal server error" }, { status: 500 });
   }
 }
 

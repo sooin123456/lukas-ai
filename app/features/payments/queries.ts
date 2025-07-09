@@ -84,10 +84,14 @@ export async function checkUserLimits(userId: string, feature: string) {
     return { hasLimit: true, limit: feature === 'document_analysis' ? 50 : 25 };
   }
 
+  if (!userSub[0].plan_id) {
+    return { hasLimit: true, limit: feature === 'document_analysis' ? 50 : 25 };
+  }
+
   const plan = await db
     .select()
     .from(subscriptionPlans)
-    .where(eq(subscriptionPlans.id, userSub[0].plan_id || ""))
+    .where(eq(subscriptionPlans.id, userSub[0].plan_id))
     .limit(1);
 
   if (plan.length === 0) {
