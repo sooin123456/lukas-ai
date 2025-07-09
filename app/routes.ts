@@ -16,8 +16,6 @@ import {
 } from "@react-router/dev/routes";
 
 export default [
-  route("/robots.txt", "core/screens/robots.ts"),
-  route("/sitemap.xml", "core/screens/sitemap.ts"),
   ...prefix("/debug", [
     // You should delete this in production.
     route("/sentry", "debug/sentry.tsx"),
