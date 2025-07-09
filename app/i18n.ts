@@ -11,7 +11,7 @@
  * Currently supports English (en), Spanish (es), and Korean (ko)
  * Using 'as const' to create a readonly tuple type for type safety
  */
-export const supportedLngs = ["en", "es", "ko"] as const;
+export const supportedLngs = ["ko", "en", "es"] as const;
 
 /**
  * Default i18next configuration
@@ -23,8 +23,8 @@ export default {
   supportedLngs,
   
   // Fallback language when user's preferred language is not supported
-  // English is used as the default fallback
-  fallbackLng: "en",
+  // Korean is used as the default fallback
+  fallbackLng: "ko",
   
   // The default namespace for translations
   // All general translations are stored in the 'common' namespace

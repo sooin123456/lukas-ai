@@ -1,7 +1,7 @@
 /**
- * User Registration Screen Component
+ * Department Manager Registration Screen Component
  *
- * This component handles new user registration with:
+ * This component handles new department manager registration with:
  * - Email and password registration
  * - Form validation for all fields
  * - Terms of service and marketing consent options
@@ -9,7 +9,7 @@
  * - Success confirmation with email verification instructions
  *
  * The registration flow includes validation, duplicate email checking,
- * and Supabase authentication integration.
+ * and Supabase authentication integration with department manager role assignment.
  */
 import type { Route } from "./+types/join";
 
@@ -48,13 +48,13 @@ import { doesUserExist } from "../lib/queries.server";
 export const meta: Route.MetaFunction = () => {
   return [
     {
-      title: `Create an account | Lukas AI`,
+      title: `부서장 계정 생성 | Lukas AI`,
     },
   ];
 };
 
 /**
- * Form validation schema for user registration
+ * Form validation schema for department manager registration
  *
  * Uses Zod to validate:
  * - Name: Required field
@@ -68,32 +68,32 @@ export const meta: Route.MetaFunction = () => {
  */
 const joinSchema = z
   .object({
-    name: z.string().min(1, { message: "Name is required" }),
-    email: z.string().email({ message: "Invalid email address" }),
+    name: z.string().min(1, { message: "이름을 입력해주세요" }),
+    email: z.string().email({ message: "올바른 이메일 주소를 입력해주세요" }),
     password: z
       .string()
-      .min(8, { message: "Password must be at least 8 characters long" }),
+      .min(8, { message: "비밀번호는 최소 8자 이상이어야 합니다" }),
     confirmPassword: z
       .string()
-      .min(8, { message: "Password must be at least 8 characters long" }),
+      .min(8, { message: "비밀번호는 최소 8자 이상이어야 합니다" }),
     marketing: z.coerce.boolean().default(false),
     terms: z.coerce.boolean(),
   })
   .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords must match",
+    message: "비밀번호가 일치하지 않습니다",
     path: ["confirmPassword"],
   });
 
 /**
- * Server action for handling user registration form submission
+ * Server action for handling department manager registration form submission
  *
- * This function processes the registration form data and attempts to create a new user.
+ * This function processes the registration form data and attempts to create a new department manager.
  * The flow is:
  * 1. Parse and validate form data using the join schema
  * 2. Return validation errors if the data is invalid
  * 3. Verify terms of service acceptance
  * 4. Check if a user with the provided email already exists
- * 5. Create a new user with Supabase auth
+ * 5. Create a new user with Supabase auth and department manager role
  * 6. Return success or error response
  *
  * @param request - The form submission request
@@ -116,7 +116,7 @@ export async function action({ request }: Route.ActionArgs) {
   // Verify terms of service acceptance
   if (!validData.terms) {
     return data(
-      { error: "You must agree to the terms of service" },
+      { error: "이용약관에 동의해주세요" },
       { status: 400 },
     );
   }
@@ -126,7 +126,7 @@ export async function action({ request }: Route.ActionArgs) {
 
   if (userExists) {
     return data(
-      { error: "There is an account with this email already." },
+      { error: "이미 등록된 이메일 주소입니다." },
       { status: 400 },
     );
   }
@@ -141,6 +141,7 @@ export async function action({ request }: Route.ActionArgs) {
         name: validData.name,
         display_name: validData.name,
         marketing_consent: validData.marketing,
+        role: 'department_manager', // Assign department manager role
       },
     },
   });
@@ -187,10 +188,10 @@ export default function Join({ actionData }: Route.ComponentProps) {
       <Card className="w-full max-w-md">
         <CardHeader className="flex flex-col items-center">
           <CardTitle className="text-2xl font-semibold" role="heading">
-            Create an account
+            부서장 계정 생성
           </CardTitle>
           <CardDescription className="text-base">
-            Enter your details to create an account
+            부서장 계정을 생성하여 회사 관리를 시작하세요
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
@@ -201,7 +202,7 @@ export default function Join({ actionData }: Route.ComponentProps) {
           >
             <div className="flex flex-col items-start space-y-2">
               <Label htmlFor="name" className="flex flex-col items-start gap-1">
-                Name
+                이름
               </Label>
               <Input
                 id="name"
@@ -221,7 +222,7 @@ export default function Join({ actionData }: Route.ComponentProps) {
                 htmlFor="email"
                 className="flex flex-col items-start gap-1"
               >
-                Email
+                이메일
               </Label>
               <Input
                 id="email"
@@ -241,9 +242,9 @@ export default function Join({ actionData }: Route.ComponentProps) {
                 htmlFor="password"
                 className="flex flex-col items-start gap-1"
               >
-                Password
+                비밀번호
                 <small className="text-muted-foreground">
-                  Must be at least 8 characters.
+                  최소 8자 이상.
                 </small>
               </Label>
               <Input
@@ -251,7 +252,7 @@ export default function Join({ actionData }: Route.ComponentProps) {
                 name="password"
                 required
                 type="password"
-                placeholder="Enter your password"
+                placeholder="비밀번호 입력"
               />
               {actionData &&
               "fieldErrors" in actionData &&
@@ -264,14 +265,14 @@ export default function Join({ actionData }: Route.ComponentProps) {
                 htmlFor="confirmPassword"
                 className="flex flex-col items-start gap-1"
               >
-                Confirm password
+                비밀번호 확인
               </Label>
               <Input
                 id="confirmPassword"
                 name="confirmPassword"
                 required
                 type="password"
-                placeholder="Confirm your password"
+                placeholder="비밀번호 확인"
               />
               {actionData &&
               "fieldErrors" in actionData &&
@@ -279,7 +280,7 @@ export default function Join({ actionData }: Route.ComponentProps) {
                 <FormErrors errors={actionData.fieldErrors.confirmPassword} />
               ) : null}
             </div>
-            <FormButton label="Create account" className="w-full" />
+            <FormButton label="계정 생성" className="w-full" />
             {actionData && "error" in actionData && actionData.error ? (
               <FormErrors errors={[actionData.error]} />
             ) : null}
@@ -287,28 +288,28 @@ export default function Join({ actionData }: Route.ComponentProps) {
             <div className="flex items-center gap-2">
               <Checkbox id="marketing" name="marketing" />
               <Label htmlFor="marketing" className="text-muted-foreground">
-                Sign up for marketing emails
+                마케팅 이메일 수신
               </Label>
             </div>
             <div className="flex items-center gap-2">
               <Checkbox id="terms" name="terms" checked />
               <Label htmlFor="terms" className="text-muted-foreground">
                 <span>
-                  I have read and agree to the{" "}
+                  이용약관에 동의하고{" "}
                   <Link
                     to="/legal/terms-of-service"
                     viewTransition
                     className="text-muted-foreground text-underline hover:text-foreground underline transition-colors"
                   >
-                    Terms of Service
+                    서비스 약관
                   </Link>{" "}
-                  and{" "}
+                  및{" "}
                   <Link
                     to="/legal/privacy-policy"
                     viewTransition
                     className="text-muted-foreground hover:text-foreground text-underline underline transition-colors"
                   >
-                    Privacy Policy
+                    개인정보 처리방침
                   </Link>
                 </span>
               </Label>
@@ -319,10 +320,9 @@ export default function Join({ actionData }: Route.ComponentProps) {
                   className="size-4"
                   color="oklch(0.627 0.194 149.214)"
                 />
-                <AlertTitle>Account created!</AlertTitle>
+                <AlertTitle>계정이 생성되었습니다!</AlertTitle>
                 <AlertDescription className="text-green-700 dark:text-green-600">
-                  Before you can sign in, please verify your email. You can
-                  close this tab.
+                  로그인하기 전에 이메일을 확인해주세요. 이 탭을 닫으세요.
                 </AlertDescription>
               </Alert>
             ) : null}
@@ -332,14 +332,14 @@ export default function Join({ actionData }: Route.ComponentProps) {
       </Card>
       <div className="flex flex-col items-center justify-center text-sm">
         <p className="text-muted-foreground">
-          Already have an account?{" "}
+          계정이 이미 있으신가요?{" "}
           <Link
             to="/login"
             viewTransition
             data-testid="form-signin-link"
             className="text-muted-foreground hover:text-foreground text-underline underline transition-colors"
           >
-            Sign in
+            로그인
           </Link>
         </p>
       </div>

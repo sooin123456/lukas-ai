@@ -1,14 +1,14 @@
 /**
  * Login Screen Component
  *
- * This component handles user authentication via email/password login,
+ * This component handles department manager authentication via email/password login,
  * social authentication providers, and provides options for password reset
  * and email verification. It demonstrates form validation, error handling,
  * and Supabase authentication integration.
  */
 import type { Route } from "./+types/login";
 
-import { AlertCircle, Loader2Icon } from "lucide-react";
+import { AlertTriangle, Loader } from "lucide-react";
 import { useRef } from "react";
 import { Form, Link, data, redirect, useFetcher } from "react-router";
 import { z } from "zod";
@@ -42,7 +42,7 @@ import { SignInButtons } from "../components/auth-login-buttons";
 export const meta: Route.MetaFunction = () => {
   return [
     {
-      title: `Log in | Lukas AI`,
+      title: `부서장 로그인 | Lukas AI`,
     },
   ];
 };
@@ -57,10 +57,10 @@ export const meta: Route.MetaFunction = () => {
  * Error messages are provided for user feedback
  */
 const loginSchema = z.object({
-  email: z.string().email({ message: "Invalid email address" }),
+  email: z.string().email({ message: "올바른 이메일 주소를 입력해주세요" }),
   password: z
     .string()
-    .min(8, { message: "Password must be at least 8 characters long" }),
+    .min(8, { message: "비밀번호는 최소 8자 이상이어야 합니다" }),
 });
 
 /**
@@ -71,8 +71,9 @@ const loginSchema = z.object({
  * 1. Parse and validate form data using the login schema
  * 2. Return validation errors if the data is invalid
  * 3. Attempt to sign in with Supabase using email/password
- * 4. Return authentication errors if sign-in fails
- * 5. Redirect to home page with auth cookies if successful
+ * 4. Check if user has department manager role
+ * 5. Return authentication errors if sign-in fails or user is not a manager
+ * 6. Redirect to dashboard with auth cookies if successful
  *
  * @param request - The form submission request
  * @returns Validation errors, auth errors, or redirect on success
@@ -104,8 +105,26 @@ export async function action({ request }: Route.ActionArgs) {
     return data({ error: signInError.message }, { status: 400 });
   }
 
-  // Redirect to home page with authentication cookies in headers
-  return redirect("/", { headers });
+  // Check if user has department manager role
+  const { data: { user } } = await client.auth.getUser();
+  if (user) {
+    const { data: profile, error: profileError } = await client
+      .from('profiles')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError || !profile || profile.role !== 'department_manager') {
+      // Sign out the user if they don't have manager role
+      await client.auth.signOut();
+      return data({ 
+        error: "부서장 권한이 필요합니다. 관리자에게 문의해주세요." 
+      }, { status: 403 });
+    }
+  }
+
+  // Redirect to dashboard with authentication cookies in headers
+  return redirect("/users/dashboard", { headers });
 }
 
 /**
@@ -153,10 +172,10 @@ export default function Login({ actionData }: Route.ComponentProps) {
       <Card className="w-full max-w-md">
         <CardHeader className="flex flex-col items-center">
           <CardTitle className="text-2xl font-semibold">
-            Sign into your account
+            부서장 로그인
           </CardTitle>
           <CardDescription className="text-base">
-            Please enter your details
+            부서장 계정으로 로그인해주세요
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4">
@@ -170,14 +189,14 @@ export default function Login({ actionData }: Route.ComponentProps) {
                 htmlFor="email"
                 className="flex flex-col items-start gap-1"
               >
-                Email
+                이메일
               </Label>
               <Input
                 id="email"
                 name="email"
                 required
                 type="email"
-                placeholder="i.e nico@supaplate.com"
+                placeholder="예: nico@supaplate.com"
               />
               {actionData &&
               "fieldErrors" in actionData &&
@@ -191,7 +210,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
                   htmlFor="password"
                   className="flex flex-col items-start gap-1"
                 >
-                  Password
+                  비밀번호
                 </Label>
                 <Link
                   to="/auth/forgot-password/reset"
@@ -199,7 +218,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
                   tabIndex={-1}
                   viewTransition
                 >
-                  Forgot your password?
+                  비밀번호를 잊으셨나요?
                 </Link>
               </div>
               <Input
@@ -207,7 +226,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
                 name="password"
                 required
                 type="password"
-                placeholder="Enter your password"
+                placeholder="비밀번호를 입력해주세요"
               />
 
               {actionData &&
@@ -216,22 +235,22 @@ export default function Login({ actionData }: Route.ComponentProps) {
                 <FormErrors errors={actionData.fieldErrors.password} />
               ) : null}
             </div>
-            <FormButton label="Log in" className="w-full" />
+            <FormButton label="로그인" className="w-full" />
             {actionData && "error" in actionData ? (
               actionData.error === "Email not confirmed" ? (
                 <Alert variant="destructive" className="bg-destructive/10">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertTitle>Email not confirmed</AlertTitle>
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>이메일 확인이 필요합니다</AlertTitle>
                   <AlertDescription className="flex flex-col items-start gap-2">
-                    Before signing in, please verify your email.
+                    로그인하기 전에 이메일을 확인해주세요.
                     <Button
                       variant="outline"
                       className="text-foreground flex items-center justify-between gap-2"
                       onClick={onResendClick}
                     >
-                      Resend confirmation email
+                      인증 이메일 다시 보내기
                       {fetcher.state === "submitting" ? (
-                        <Loader2Icon
+                        <Loader
                           data-testid="resend-confirmation-email-spinner"
                           className="size-4 animate-spin"
                         />
@@ -249,14 +268,14 @@ export default function Login({ actionData }: Route.ComponentProps) {
       </Card>
       <div className="flex flex-col items-center justify-center text-sm">
         <p className="text-muted-foreground">
-          Don't have an account?{" "}
+          계정이 없으신가요?{" "}
           <Link
             to="/join"
             viewTransition
             data-testid="form-signup-link"
             className="text-muted-foreground hover:text-foreground text-underline underline transition-colors"
           >
-            Sign up
+            회원가입
           </Link>
         </p>
       </div>

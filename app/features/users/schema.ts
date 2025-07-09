@@ -32,6 +32,8 @@ export const profiles = pgTable(
     name: text().notNull(),
     avatar_url: text(),
     marketing_consent: boolean("marketing_consent").notNull().default(false),
+    // Role field for department manager authentication
+    role: text("role").default("user").notNull(), // 'user' | 'department_manager' | 'admin'
     // Adds created_at and updated_at timestamp columns
     ...timestamps,
   },

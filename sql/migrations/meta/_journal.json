@@ -15,6 +15,27 @@
       "when": 1744715791562,
       "tag": "0001_great_junta",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1752026296557,
+      "tag": "0002_bumpy_lady_vermin",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1752027075665,
+      "tag": "0003_gifted_star_brand",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1752028237105,
+      "tag": "0004_nervous_dagger",
+      "breakpoints": true
     }
   ]
 }

@@ -80,11 +80,6 @@ export default function LangSwitcher() {
       
       {/* Dropdown menu with language options */}
       <DropdownMenuContent align="end">
-        {/* Spanish language option */}
-        <DropdownMenuItem onClick={() => handleLocaleChange("es")}>
-          🇪🇸 {t("navigation.es")} {/* Translated name of Spanish */}
-        </DropdownMenuItem>
-        
         {/* Korean language option */}
         <DropdownMenuItem onClick={() => handleLocaleChange("ko")}>
           🇰🇷 {t("navigation.kr")} {/* Translated name of Korean */}
@@ -93,6 +88,11 @@ export default function LangSwitcher() {
         {/* English language option */}
         <DropdownMenuItem onClick={() => handleLocaleChange("en")}>
           🇬🇧 {t("navigation.en")} {/* Translated name of English */}
+        </DropdownMenuItem>
+        
+        {/* Spanish language option */}
+        <DropdownMenuItem onClick={() => handleLocaleChange("es")}>
+          🇪🇸 {t("navigation.es")} {/* Translated name of Spanish */}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

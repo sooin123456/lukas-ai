@@ -8,6 +8,7 @@
  * 
  * The module includes:
  * - Authentication guard to ensure a user is logged in
+ * - Department manager authentication guard
  * - HTTP method guard to ensure requests use the correct HTTP method
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -40,6 +41,48 @@ export async function requireAuthentication(client: SupabaseClient) {
   } = await client.auth.getUser();
   if (!user) {
     throw data(null, { status: 401 });
+  }
+}
+
+/**
+ * Require department manager authentication for a route or action
+ * 
+ * This function checks if a user is authenticated and has department manager role.
+ * It first ensures the user is logged in, then checks their role in the database.
+ * 
+ * @example
+ * // In a loader or action function
+ * export async function loader({ request }: LoaderArgs) {
+ *   const [client] = makeServerClient(request);
+ *   await requireDepartmentManager(client);
+ *   
+ *   // Continue with department manager logic...
+ *   return json({ ... });
+ * }
+ * 
+ * @param client - The Supabase client instance to use for authentication check
+ * @throws {Response} 401 Unauthorized if no user is authenticated
+ * @throws {Response} 403 Forbidden if user is not a department manager
+ */
+export async function requireDepartmentManager(client: SupabaseClient) {
+  // First, ensure user is authenticated
+  const {
+    data: { user },
+  } = await client.auth.getUser();
+  
+  if (!user) {
+    throw data(null, { status: 401 });
+  }
+
+  // Check if user has department manager role
+  const { data: profile, error } = await client
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)
+    .single();
+
+  if (error || !profile || profile.role !== 'department_manager') {
+    throw data(null, { status: 403 });
   }
 }
 
