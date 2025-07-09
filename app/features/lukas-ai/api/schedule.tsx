@@ -1,5 +1,5 @@
-import { json } from "@react-router/node";
-import { type LoaderFunctionArgs, type ActionFunctionArgs } from "@react-router/node";
+import { json } from "react-router";
+import { type LoaderFunctionArgs, type ActionFunctionArgs } from "react-router";
 import { eq, and, gte, lte, sql } from "drizzle-orm";
 import db from "~/core/db/drizzle-client.server";
 import {
@@ -27,12 +27,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
       description: calendarEvents.description,
       startTime: calendarEvents.startTime,
       endTime: calendarEvents.endTime,
-      location: calendarEvents.location,
-      attendees: calendarEvents.attendees,
-      isRecurring: calendarEvents.isRecurring,
-      recurrenceRule: calendarEvents.recurrenceRule,
+      type: calendarEvents.type,
       priority: calendarEvents.priority,
       status: calendarEvents.status,
+      location: calendarEvents.location,
+      attendees: calendarEvents.attendees,
+      recurrence: calendarEvents.recurrence,
+      reminders: calendarEvents.reminders,
+      tags: calendarEvents.tags,
     })
     .from(calendarEvents)
     .where(eq(calendarEvents.userId, user.id))
@@ -45,10 +47,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
       name: automatedTasks.name,
       description: automatedTasks.description,
       type: automatedTasks.type,
-      schedule: automatedTasks.schedule,
-      lastRun: automatedTasks.lastRun,
-      nextRun: automatedTasks.nextRun,
+      trigger: automatedTasks.trigger,
+      triggerConfig: automatedTasks.triggerConfig,
+      action: automatedTasks.action,
+      actionConfig: automatedTasks.actionConfig,
       isActive: automatedTasks.isActive,
+      lastExecuted: automatedTasks.lastExecuted,
+      nextExecution: automatedTasks.nextExecution,
+      executionCount: automatedTasks.executionCount,
       successCount: automatedTasks.successCount,
       failureCount: automatedTasks.failureCount,
       created_at: automatedTasks.created_at,
@@ -67,10 +73,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
       endTime: taskExecutions.endTime,
       duration: taskExecutions.duration,
       result: taskExecutions.result,
-      errorMessage: taskExecutions.errorMessage,
+      error: taskExecutions.error,
     })
     .from(taskExecutions)
-    .where(eq(taskExecutions.userId, user.id))
+    .where(eq(taskExecutions.taskId, automatedTasks.id))
     .orderBy(sql`${taskExecutions.startTime} DESC`)
     .limit(20);
 
@@ -79,11 +85,11 @@ export async function loader({ request }: LoaderFunctionArgs) {
     .select({
       id: timeTracking.id,
       taskName: timeTracking.taskName,
-      description: timeTracking.description,
+      category: timeTracking.category,
       startTime: timeTracking.startTime,
       endTime: timeTracking.endTime,
       duration: timeTracking.duration,
-      category: timeTracking.category,
+      description: timeTracking.description,
       tags: timeTracking.tags,
     })
     .from(timeTracking)
@@ -98,13 +104,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
       name: workflows.name,
       description: workflows.description,
       steps: workflows.steps,
+      triggers: workflows.triggers,
       isActive: workflows.isActive,
-      lastTriggered: workflows.lastTriggered,
-      triggerCount: workflows.triggerCount,
+      executionCount: workflows.executionCount,
     })
     .from(workflows)
     .where(eq(workflows.userId, user.id))
-    .orderBy(sql`${workflows.lastTriggered} DESC`);
+    .orderBy(sql`${workflows.created_at} DESC`);
 
   return json({
     events,
@@ -126,12 +132,14 @@ export async function action({ request }: ActionFunctionArgs) {
       const description = formData.get("description") as string;
       const startTime = new Date(formData.get("startTime") as string);
       const endTime = new Date(formData.get("endTime") as string);
-      const location = formData.get("location") as string;
-      const attendees = formData.get("attendees") ? JSON.parse(formData.get("attendees") as string) : [];
-      const isRecurring = formData.get("isRecurring") === "true";
-      const recurrenceRule = formData.get("recurrenceRule") as string;
+      const type = formData.get("type") as string;
       const priority = formData.get("priority") as string;
       const status = formData.get("status") as string;
+      const location = formData.get("location") as string;
+      const attendees = formData.get("attendees") ? JSON.parse(formData.get("attendees") as string) : [];
+      const recurrence = formData.get("recurrence") ? JSON.parse(formData.get("recurrence") as string) : null;
+      const reminders = formData.get("reminders") ? JSON.parse(formData.get("reminders") as string) : null;
+      const tags = formData.get("tags") ? JSON.parse(formData.get("tags") as string) : null;
 
       await db
         .insert(calendarEvents)
@@ -141,12 +149,14 @@ export async function action({ request }: ActionFunctionArgs) {
           description,
           startTime,
           endTime,
-          location,
-          attendees,
-          isRecurring,
-          recurrenceRule,
+          type,
           priority,
           status,
+          location,
+          attendees,
+          recurrence,
+          reminders,
+          tags,
         });
 
       return json({ success: true });
@@ -156,7 +166,10 @@ export async function action({ request }: ActionFunctionArgs) {
       const name = formData.get("name") as string;
       const description = formData.get("description") as string;
       const type = formData.get("type") as string;
-      const schedule = formData.get("schedule") as string;
+      const trigger = formData.get("trigger") as string;
+      const triggerConfig = formData.get("triggerConfig") ? JSON.parse(formData.get("triggerConfig") as string) : null;
+      const action = formData.get("action") as string;
+      const actionConfig = formData.get("actionConfig") ? JSON.parse(formData.get("actionConfig") as string) : null;
       const isActive = formData.get("isActive") === "true";
 
       await db
@@ -166,10 +179,14 @@ export async function action({ request }: ActionFunctionArgs) {
           name,
           description,
           type,
-          schedule,
+          trigger,
+          triggerConfig,
+          action,
+          actionConfig,
           isActive,
-          lastRun: null,
-          nextRun: new Date(), // Calculate based on schedule
+          lastExecuted: null,
+          nextExecution: new Date(), // Calculate based on trigger
+          executionCount: 0,
           successCount: 0,
           failureCount: 0,
         });
@@ -179,8 +196,8 @@ export async function action({ request }: ActionFunctionArgs) {
 
     case "start_time_tracking": {
       const taskName = formData.get("taskName") as string;
-      const description = formData.get("description") as string;
       const category = formData.get("category") as string;
+      const description = formData.get("description") as string;
       const tags = formData.get("tags") ? JSON.parse(formData.get("tags") as string) : [];
 
       await db
@@ -188,11 +205,11 @@ export async function action({ request }: ActionFunctionArgs) {
         .values({
           userId: user.id,
           taskName,
-          description,
+          category,
           startTime: new Date(),
           endTime: null,
           duration: 0,
-          category,
+          description,
           tags,
         });
 
@@ -218,7 +235,7 @@ export async function action({ request }: ActionFunctionArgs) {
       const name = formData.get("name") as string;
       const description = formData.get("description") as string;
       const steps = JSON.parse(formData.get("steps") as string);
-      const isActive = formData.get("isActive") === "true";
+      const triggers = formData.get("triggers") ? JSON.parse(formData.get("triggers") as string) : null;
 
       await db
         .insert(workflows)
@@ -227,9 +244,9 @@ export async function action({ request }: ActionFunctionArgs) {
           name,
           description,
           steps,
-          isActive,
-          lastTriggered: null,
-          triggerCount: 0,
+          triggers,
+          isActive: true,
+          executionCount: 0,
         });
 
       return json({ success: true });

@@ -1,12 +1,12 @@
-import { json } from "@react-router/node";
-import { type LoaderFunctionArgs, type ActionFunctionArgs } from "@react-router/node";
+import { json } from "react-router";
+import { type LoaderFunctionArgs, type ActionFunctionArgs } from "react-router";
 import { eq, and, gte, lte, sql } from "drizzle-orm";
 import db from "~/core/db/drizzle-client.server";
 import {
   companyDocuments,
   documentChunks,
   knowledgeBase,
-  documentQa,
+  documentQA,
 } from "../schema";
 
 // Temporary requireUser function until we fix the import
@@ -53,16 +53,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
   // Get recent Q&A interactions
   const recentQa = await db
     .select({
-      id: documentQa.id,
-      question: documentQa.question,
-      answer: documentQa.answer,
-      sourceDocuments: documentQa.sourceDocuments,
-      confidence: documentQa.confidence,
-      created_at: documentQa.created_at,
+      id: documentQA.id,
+      question: documentQA.question,
+      answer: documentQA.answer,
+      documentId: documentQA.documentId,
+      confidence: documentQA.confidence,
+      created_at: documentQA.created_at,
     })
-    .from(documentQa)
-    .where(eq(documentQa.userId, user.id))
-    .orderBy(sql`${documentQa.created_at} DESC`)
+    .from(documentQA)
+    .where(eq(documentQA.userId, user.id))
+    .orderBy(sql`${documentQA.created_at} DESC`)
     .limit(10);
 
   return json({
@@ -155,17 +155,19 @@ export async function action({ request }: ActionFunctionArgs) {
 
     case "ask_question": {
       const question = formData.get("question") as string;
+      const documentId = formData.get("documentId") as string;
       const answer = formData.get("answer") as string;
-      const sourceDocuments = formData.get("sourceDocuments") ? JSON.parse(formData.get("sourceDocuments") as string) : [];
+      const sourceChunks = formData.get("sourceChunks") ? JSON.parse(formData.get("sourceChunks") as string) : [];
       const confidence = parseFloat(formData.get("confidence") as string);
 
       await db
-        .insert(documentQa)
+        .insert(documentQA)
         .values({
           userId: user.id,
           question,
           answer,
-          sourceDocuments,
+          documentId,
+          sourceChunks,
           confidence,
         });
 

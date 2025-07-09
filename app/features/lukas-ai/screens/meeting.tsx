@@ -12,9 +12,9 @@ import type { Route } from "./+types/meeting";
 
 import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { json } from "@react-router/node";
-import { type LoaderFunctionArgs, type ActionFunctionArgs } from "@react-router/node";
-import { useLoaderData, useFetcher } from "@react-router/react";
+import { json } from "react-router";
+import { type LoaderFunctionArgs, type ActionFunctionArgs } from "react-router";
+import { useLoaderData, useFetcher } from "react-router";
 import { eq, and, gte, lte, sql } from "drizzle-orm";
 import db from "~/core/db/drizzle-client.server";
 import {
@@ -91,10 +91,9 @@ export async function loader({ request }: LoaderFunctionArgs) {
       description: meetingSessions.description,
       startTime: meetingSessions.startTime,
       endTime: meetingSessions.endTime,
-      duration: meetingSessions.duration,
-      participants: meetingSessions.participants,
       status: meetingSessions.status,
-      recordingUrl: meetingSessions.recordingUrl,
+      participants: meetingSessions.participants,
+      settings: meetingSessions.settings,
     })
     .from(meetingSessions)
     .where(eq(meetingSessions.userId, user.id))
@@ -105,14 +104,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const transcripts = await db
     .select({
       id: meetingTranscripts.id,
-      sessionId: meetingTranscripts.sessionId,
-      speaker: meetingTranscripts.speaker,
-      text: meetingTranscripts.text,
+      meetingId: meetingTranscripts.meetingId,
+      speakerId: meetingTranscripts.speakerId,
+      speakerName: meetingTranscripts.speakerName,
+      content: meetingTranscripts.content,
       timestamp: meetingTranscripts.timestamp,
       confidence: meetingTranscripts.confidence,
     })
     .from(meetingTranscripts)
-    .where(eq(meetingTranscripts.userId, user.id))
+    .where(eq(meetingTranscripts.meetingId, meetingSessions.id))
     .orderBy(sql`${meetingTranscripts.timestamp} DESC`)
     .limit(50);
 
@@ -120,15 +120,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
   const summaries = await db
     .select({
       id: meetingSummaries.id,
-      sessionId: meetingSummaries.sessionId,
+      meetingId: meetingSummaries.meetingId,
       summary: meetingSummaries.summary,
       keyPoints: meetingSummaries.keyPoints,
       actionItems: meetingSummaries.actionItems,
       decisions: meetingSummaries.decisions,
+      nextSteps: meetingSummaries.nextSteps,
       created_at: meetingSummaries.created_at,
     })
     .from(meetingSummaries)
-    .where(eq(meetingSummaries.userId, user.id))
+    .where(eq(meetingSummaries.meetingId, meetingSessions.id))
     .orderBy(sql`${meetingSummaries.created_at} DESC`)
     .limit(5);
 
@@ -158,10 +159,9 @@ export async function action({ request }: ActionFunctionArgs) {
           description,
           startTime: new Date(),
           endTime: null,
-          duration: 0,
+          status: "active",
           participants,
-          status: "recording",
-          recordingUrl: null,
+          settings: { recording: true, transcription: true },
         })
         .returning();
 
@@ -176,8 +176,7 @@ export async function action({ request }: ActionFunctionArgs) {
         .update(meetingSessions)
         .set({
           endTime,
-          duration: sql`EXTRACT(EPOCH FROM (${endTime} - start_time))`,
-          status: "completed",
+          status: "ended",
         })
         .where(eq(meetingSessions.id, sessionId));
 
@@ -185,19 +184,20 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     case "add_transcript": {
-      const sessionId = formData.get("sessionId") as string;
-      const speaker = formData.get("speaker") as string;
-      const text = formData.get("text") as string;
+      const meetingId = formData.get("meetingId") as string;
+      const speakerId = formData.get("speakerId") as string;
+      const speakerName = formData.get("speakerName") as string;
+      const content = formData.get("content") as string;
       const timestamp = new Date(formData.get("timestamp") as string);
-      const confidence = parseFloat(formData.get("confidence") as string);
+      const confidence = parseInt(formData.get("confidence") as string);
 
       await db
         .insert(meetingTranscripts)
         .values({
-          userId: user.id,
-          sessionId,
-          speaker,
-          text,
+          meetingId,
+          speakerId,
+          speakerName,
+          content,
           timestamp,
           confidence,
         });
@@ -206,21 +206,22 @@ export async function action({ request }: ActionFunctionArgs) {
     }
 
     case "generate_summary": {
-      const sessionId = formData.get("sessionId") as string;
+      const meetingId = formData.get("meetingId") as string;
       const summary = formData.get("summary") as string;
       const keyPoints = formData.get("keyPoints") ? JSON.parse(formData.get("keyPoints") as string) : [];
       const actionItems = formData.get("actionItems") ? JSON.parse(formData.get("actionItems") as string) : [];
       const decisions = formData.get("decisions") ? JSON.parse(formData.get("decisions") as string) : [];
+      const nextSteps = formData.get("nextSteps") as string;
 
       await db
         .insert(meetingSummaries)
         .values({
-          userId: user.id,
-          sessionId,
+          meetingId,
           summary,
           keyPoints,
           actionItems,
           decisions,
+          nextSteps,
         });
 
       return json({ success: true });
@@ -256,7 +257,7 @@ interface Transcript {
 /**
  * Meeting component
  */
-export default function Meeting({ loaderData }: Route.ComponentProps) {
+export default function MeetingScreen() {
   const { t } = useTranslation();
   const { sessions, transcripts, summaries } = useLoaderData<typeof loader>();
   const fetcher = useFetcher();
@@ -443,17 +444,17 @@ export default function Meeting({ loaderData }: Route.ComponentProps) {
                   <div className="flex items-center space-x-2 text-xs text-muted-foreground">
                     <Clock className="h-3 w-3" />
                     <span>{new Date(session.startTime).toLocaleString()}</span>
-                    {session.duration && (
+                    {session.endTime && session.startTime && (
                       <>
                         <span>•</span>
-                        <span>{Math.round(session.duration / 60)}분</span>
+                        <span>{Math.round((new Date(session.endTime).getTime() - new Date(session.startTime).getTime()) / 60000)}분</span>
                       </>
                     )}
                   </div>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <Badge variant={session.status === "completed" ? "default" : "secondary"}>
-                    {session.status === "completed" ? "완료" : "진행중"}
+                  <Badge variant={session.status === "ended" ? "default" : "secondary"}>
+                    {session.status === "ended" ? "완료" : "진행중"}
                   </Badge>
                   <Button variant="outline" size="sm">
                     요약 보기

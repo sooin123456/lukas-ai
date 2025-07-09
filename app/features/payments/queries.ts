@@ -10,7 +10,7 @@ import db from "~/core/db/drizzle-client.server";
 import {
   subscriptionPlans,
   userSubscriptions,
-  subscriptionUsage,
+  usageTracking,
 } from "./schema";
 
 /**
@@ -21,15 +21,14 @@ export async function getSubscriptionPlans() {
     .select({
       id: subscriptionPlans.id,
       name: subscriptionPlans.name,
-      description: subscriptionPlans.description,
+      display_name: subscriptionPlans.display_name,
       price: subscriptionPlans.price,
-      billingCycle: subscriptionPlans.billingCycle,
+      billing_cycle: subscriptionPlans.billing_cycle,
       features: subscriptionPlans.features,
-      limits: subscriptionPlans.limits,
-      isActive: subscriptionPlans.isActive,
+      is_active: subscriptionPlans.is_active,
     })
     .from(subscriptionPlans)
-    .where(eq(subscriptionPlans.isActive, true))
+    .where(eq(subscriptionPlans.is_active, true))
     .orderBy(subscriptionPlans.price);
 }
 
@@ -40,18 +39,16 @@ export async function getUserSubscription(userId: string) {
   const subscription = await db
     .select({
       id: userSubscriptions.id,
-      userId: userSubscriptions.userId,
-      planId: userSubscriptions.planId,
+      user_id: userSubscriptions.user_id,
+      plan_id: userSubscriptions.plan_id,
       status: userSubscriptions.status,
-      startDate: userSubscriptions.startDate,
-      endDate: userSubscriptions.endDate,
-      nextBillingDate: userSubscriptions.nextBillingDate,
-      cancelAtPeriodEnd: userSubscriptions.cancelAtPeriodEnd,
-      stripeSubscriptionId: userSubscriptions.stripeSubscriptionId,
-      stripeCustomerId: userSubscriptions.stripeCustomerId,
+      current_period_start: userSubscriptions.current_period_start,
+      current_period_end: userSubscriptions.current_period_end,
+      stripe_subscription_id: userSubscriptions.stripe_subscription_id,
+      stripe_customer_id: userSubscriptions.stripe_customer_id,
     })
     .from(userSubscriptions)
-    .where(eq(userSubscriptions.userId, userId))
+    .where(eq(userSubscriptions.user_id, userId))
     .limit(1);
 
   return subscription[0] || null;
@@ -63,16 +60,15 @@ export async function getUserSubscription(userId: string) {
 export async function getUserSubscriptionUsage(userId: string) {
   return await db
     .select({
-      id: subscriptionUsage.id,
-      userId: subscriptionUsage.userId,
-      feature: subscriptionUsage.feature,
-      usage: subscriptionUsage.usage,
-      limit: subscriptionUsage.limit,
-      period: subscriptionUsage.period,
-      resetDate: subscriptionUsage.resetDate,
+      id: usageTracking.id,
+      user_id: usageTracking.user_id,
+      feature: usageTracking.feature,
+      usage_count: usageTracking.usage_count,
+      period_start: usageTracking.period_start,
+      period_end: usageTracking.period_end,
     })
-    .from(subscriptionUsage)
-    .where(eq(subscriptionUsage.userId, userId));
+    .from(usageTracking)
+    .where(eq(usageTracking.user_id, userId));
 }
 
 /**
@@ -91,31 +87,27 @@ export async function upsertUserSubscription(
     return await db
       .update(userSubscriptions)
       .set({
-        planId,
+        plan_id: planId,
         status: "active",
-        startDate: new Date(),
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        cancelAtPeriodEnd: false,
-        stripeSubscriptionId,
-        stripeCustomerId,
+        current_period_start: new Date(),
+        current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        stripe_subscription_id: stripeSubscriptionId,
+        stripe_customer_id: stripeCustomerId,
       })
-      .where(eq(userSubscriptions.userId, userId))
+      .where(eq(userSubscriptions.user_id, userId))
       .returning();
   } else {
     // Create new subscription
     return await db
       .insert(userSubscriptions)
       .values({
-        userId,
-        planId,
+        user_id: userId,
+        plan_id: planId,
         status: "active",
-        startDate: new Date(),
-        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
-        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        cancelAtPeriodEnd: false,
-        stripeSubscriptionId,
-        stripeCustomerId,
+        current_period_start: new Date(),
+        current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        stripe_subscription_id: stripeSubscriptionId,
+        stripe_customer_id: stripeCustomerId,
       })
       .returning();
   }
@@ -129,9 +121,8 @@ export async function cancelUserSubscription(userId: string) {
     .update(userSubscriptions)
     .set({
       status: "cancelled",
-      cancelAtPeriodEnd: true,
     })
-    .where(eq(userSubscriptions.userId, userId))
+    .where(eq(userSubscriptions.user_id, userId))
     .returning();
 }
 
@@ -141,16 +132,21 @@ export async function cancelUserSubscription(userId: string) {
 export async function trackSubscriptionUsage(
   userId: string,
   feature: string,
-  usage: number,
-  limit: number
+  usage: number
 ) {
+  const now = new Date();
+  const periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
   const existingUsage = await db
     .select()
-    .from(subscriptionUsage)
+    .from(usageTracking)
     .where(
       and(
-        eq(subscriptionUsage.userId, userId),
-        eq(subscriptionUsage.feature, feature)
+        eq(usageTracking.user_id, userId),
+        eq(usageTracking.feature, feature),
+        gte(usageTracking.period_start, periodStart),
+        lte(usageTracking.period_end, periodEnd)
       )
     )
     .limit(1);
@@ -158,24 +154,22 @@ export async function trackSubscriptionUsage(
   if (existingUsage.length > 0) {
     // Update existing usage
     return await db
-      .update(subscriptionUsage)
+      .update(usageTracking)
       .set({
-        usage: existingUsage[0].usage + usage,
-        limit,
+        usage_count: existingUsage[0].usage_count + usage,
       })
-      .where(eq(subscriptionUsage.id, existingUsage[0].id))
+      .where(eq(usageTracking.id, existingUsage[0].id))
       .returning();
   } else {
     // Create new usage record
     return await db
-      .insert(subscriptionUsage)
+      .insert(usageTracking)
       .values({
-        userId,
+        user_id: userId,
         feature,
-        usage,
-        limit,
-        period: "monthly",
-        resetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        usage_count: usage,
+        period_start: periodStart,
+        period_end: periodEnd,
       })
       .returning();
   }
@@ -185,13 +179,19 @@ export async function trackSubscriptionUsage(
  * Check if user has exceeded usage limits
  */
 export async function checkUsageLimits(userId: string, feature: string) {
+  const now = new Date();
+  const periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
   const usage = await db
     .select()
-    .from(subscriptionUsage)
+    .from(usageTracking)
     .where(
       and(
-        eq(subscriptionUsage.userId, userId),
-        eq(subscriptionUsage.feature, feature)
+        eq(usageTracking.user_id, userId),
+        eq(usageTracking.feature, feature),
+        gte(usageTracking.period_start, periodStart),
+        lte(usageTracking.period_end, periodEnd)
       )
     )
     .limit(1);
@@ -201,8 +201,9 @@ export async function checkUsageLimits(userId: string, feature: string) {
   }
 
   const currentUsage = usage[0];
-  const exceeded = currentUsage.usage >= currentUsage.limit;
-  const remaining = Math.max(0, currentUsage.limit - currentUsage.usage);
+  const limit = feature === 'document_analysis' ? 50 : 25; // Basic plan limits
+  const exceeded = currentUsage.usage_count >= limit;
+  const remaining = Math.max(0, limit - currentUsage.usage_count);
 
   return { exceeded, remaining };
 }
@@ -214,8 +215,8 @@ export async function getSubscriptionAnalytics(userId: string) {
   const subscription = await getUserSubscription(userId);
   const usage = await getUserSubscriptionUsage(userId);
 
-  const totalUsage = usage.reduce((sum, item) => sum + item.usage, 0);
-  const totalLimit = usage.reduce((sum, item) => sum + item.limit, 0);
+  const totalUsage = usage.reduce((sum: number, item: any) => sum + item.usage_count, 0);
+  const totalLimit = usage.length * 25; // Basic plan limit per feature
   const usagePercentage = totalLimit > 0 ? (totalUsage / totalLimit) * 100 : 0;
 
   return {

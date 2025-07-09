@@ -1,5 +1,5 @@
-import { json } from "@react-router/node";
-import { type LoaderFunctionArgs, type ActionFunctionArgs } from "@react-router/node";
+import { json } from "react-router";
+import { type LoaderFunctionArgs, type ActionFunctionArgs } from "react-router";
 import { eq, and, gte, lte, sql } from "drizzle-orm";
 import db from "~/core/db/drizzle-client.server";
 import {
