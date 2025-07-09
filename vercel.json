@@ -3,11 +3,6 @@
   "outputDirectory": "build",
   "installCommand": "npm install",
   "framework": "vite",
-  "functions": {
-    "build/server/nodejs_eyJydW50aW1lIjoibm9kZWpzIn0/index.js": {
-      "maxDuration": 30
-    }
-  },
   "rewrites": [
     {
       "source": "/((?!api|_next/static|_next/image|favicon.ico).*)",
