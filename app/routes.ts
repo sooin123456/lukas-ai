@@ -16,32 +16,6 @@ import {
 } from "@react-router/dev/routes";
 
 export default [
-  // API Routes. Routes that export actions and loaders but no UI.
-  ...prefix("/api", [
-    ...prefix("/settings", [
-      route("/theme", "features/settings/api/set-theme.tsx"),
-      route("/locale", "features/settings/api/set-locale.tsx"),
-    ]),
-    ...prefix("/users", [
-      index("features/users/api/delete-account.tsx"),
-      route("/password", "features/users/api/change-password.tsx"),
-      route("/email", "features/users/api/change-email.tsx"),
-      route("/profile", "features/users/api/edit-profile.tsx"),
-      route("/providers", "features/users/api/connect-provider.tsx"),
-      route(
-        "/providers/:provider",
-        "features/users/api/disconnect-provider.tsx",
-      ),
-    ]),
-    ...prefix("/blog", [route("/og", "features/blog/api/og.tsx")]),
-    ...prefix("/lukas-ai", [
-      route("/meeting", "features/lukas-ai/api/meeting.tsx"),
-      route("/documents", "features/lukas-ai/api/documents.tsx"),
-      route("/schedule", "features/lukas-ai/api/schedule.tsx"),
-      route("/analytics", "features/lukas-ai/api/analytics.tsx"),
-    ]),
-  ]),
-
   layout("core/layouts/navigation.layout.tsx", [
     route("/auth/confirm", "features/auth/screens/confirm.tsx"),
     index("features/home/screens/home.tsx"),
@@ -51,7 +25,6 @@ export default [
       route("/login", "features/auth/screens/login.tsx"),
       route("/join", "features/auth/screens/join.tsx"),
       ...prefix("/auth", [
-        route("/api/resend", "features/auth/api/resend.tsx"),
         route(
           "/forgot-password/reset",
           "features/auth/screens/forgot-password.tsx",
