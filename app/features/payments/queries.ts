@@ -4,131 +4,225 @@
  * This file contains database queries for the payment system,
  * including subscription management and usage tracking.
  */
-import { eq, and, gte, lte } from "drizzle-orm";
+import { eq, and, gte, lte, sql } from "drizzle-orm";
 
 import db from "~/core/db/drizzle-client.server";
-import { payments, subscriptionPlans, userSubscriptions, usageTracking } from "./schema";
+import {
+  subscriptionPlans,
+  userSubscriptions,
+  subscriptionUsage,
+} from "./schema";
 
 /**
  * Get all available subscription plans
  */
 export async function getSubscriptionPlans() {
   return await db
-    .select()
+    .select({
+      id: subscriptionPlans.id,
+      name: subscriptionPlans.name,
+      description: subscriptionPlans.description,
+      price: subscriptionPlans.price,
+      billingCycle: subscriptionPlans.billingCycle,
+      features: subscriptionPlans.features,
+      limits: subscriptionPlans.limits,
+      isActive: subscriptionPlans.isActive,
+    })
     .from(subscriptionPlans)
-    .where(eq(subscriptionPlans.is_active, true));
+    .where(eq(subscriptionPlans.isActive, true))
+    .orderBy(subscriptionPlans.price);
 }
 
 /**
  * Get user's current subscription
  */
 export async function getUserSubscription(userId: string) {
-  return await db
-    .select()
+  const subscription = await db
+    .select({
+      id: userSubscriptions.id,
+      userId: userSubscriptions.userId,
+      planId: userSubscriptions.planId,
+      status: userSubscriptions.status,
+      startDate: userSubscriptions.startDate,
+      endDate: userSubscriptions.endDate,
+      nextBillingDate: userSubscriptions.nextBillingDate,
+      cancelAtPeriodEnd: userSubscriptions.cancelAtPeriodEnd,
+      stripeSubscriptionId: userSubscriptions.stripeSubscriptionId,
+      stripeCustomerId: userSubscriptions.stripeCustomerId,
+    })
     .from(userSubscriptions)
-    .where(eq(userSubscriptions.user_id, userId))
+    .where(eq(userSubscriptions.userId, userId))
     .limit(1);
+
+  return subscription[0] || null;
 }
 
 /**
- * Get user's current usage for a specific feature
+ * Get user's subscription usage
  */
-export async function getUserUsage(userId: string, feature: string, periodStart: Date, periodEnd: Date) {
+export async function getUserSubscriptionUsage(userId: string) {
   return await db
+    .select({
+      id: subscriptionUsage.id,
+      userId: subscriptionUsage.userId,
+      feature: subscriptionUsage.feature,
+      usage: subscriptionUsage.usage,
+      limit: subscriptionUsage.limit,
+      period: subscriptionUsage.period,
+      resetDate: subscriptionUsage.resetDate,
+    })
+    .from(subscriptionUsage)
+    .where(eq(subscriptionUsage.userId, userId));
+}
+
+/**
+ * Create or update user subscription
+ */
+export async function upsertUserSubscription(
+  userId: string,
+  planId: string,
+  stripeSubscriptionId: string,
+  stripeCustomerId: string
+) {
+  const existingSubscription = await getUserSubscription(userId);
+
+  if (existingSubscription) {
+    // Update existing subscription
+    return await db
+      .update(userSubscriptions)
+      .set({
+        planId,
+        status: "active",
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        cancelAtPeriodEnd: false,
+        stripeSubscriptionId,
+        stripeCustomerId,
+      })
+      .where(eq(userSubscriptions.userId, userId))
+      .returning();
+  } else {
+    // Create new subscription
+    return await db
+      .insert(userSubscriptions)
+      .values({
+        userId,
+        planId,
+        status: "active",
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        nextBillingDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        cancelAtPeriodEnd: false,
+        stripeSubscriptionId,
+        stripeCustomerId,
+      })
+      .returning();
+  }
+}
+
+/**
+ * Cancel user subscription
+ */
+export async function cancelUserSubscription(userId: string) {
+  return await db
+    .update(userSubscriptions)
+    .set({
+      status: "cancelled",
+      cancelAtPeriodEnd: true,
+    })
+    .where(eq(userSubscriptions.userId, userId))
+    .returning();
+}
+
+/**
+ * Track subscription usage
+ */
+export async function trackSubscriptionUsage(
+  userId: string,
+  feature: string,
+  usage: number,
+  limit: number
+) {
+  const existingUsage = await db
     .select()
-    .from(usageTracking)
+    .from(subscriptionUsage)
     .where(
       and(
-        eq(usageTracking.user_id, userId),
-        eq(usageTracking.feature, feature),
-        gte(usageTracking.period_start, periodStart),
-        lte(usageTracking.period_end, periodEnd)
+        eq(subscriptionUsage.userId, userId),
+        eq(subscriptionUsage.feature, feature)
       )
     )
     .limit(1);
-}
 
-/**
- * Update user's usage for a specific feature
- */
-export async function updateUserUsage(userId: string, feature: string, usageCount: number, periodStart: Date, periodEnd: Date) {
-  const existingUsage = await getUserUsage(userId, feature, periodStart, periodEnd);
-  
   if (existingUsage.length > 0) {
-    // Update existing usage record
+    // Update existing usage
     return await db
-      .update(usageTracking)
-      .set({ usage_count: usageCount })
-      .where(eq(usageTracking.id, existingUsage[0].id));
+      .update(subscriptionUsage)
+      .set({
+        usage: existingUsage[0].usage + usage,
+        limit,
+      })
+      .where(eq(subscriptionUsage.id, existingUsage[0].id))
+      .returning();
   } else {
     // Create new usage record
     return await db
-      .insert(usageTracking)
+      .insert(subscriptionUsage)
       .values({
-        user_id: userId,
+        userId,
         feature,
-        usage_count: usageCount,
-        period_start: periodStart,
-        period_end: periodEnd,
-      });
+        usage,
+        limit,
+        period: "monthly",
+        resetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      })
+      .returning();
   }
 }
 
 /**
- * Check if user has exceeded their plan limits
+ * Check if user has exceeded usage limits
  */
-export async function checkUserLimits(userId: string, feature: string) {
-  const userSub = await getUserSubscription(userId);
-  if (userSub.length === 0) {
-    // No subscription, use basic plan limits
-    return { hasLimit: true, limit: feature === 'document_analysis' ? 50 : 25 };
-  }
-
-  if (!userSub[0].plan_id) {
-    return { hasLimit: true, limit: feature === 'document_analysis' ? 50 : 25 };
-  }
-
-  const plan = await db
+export async function checkUsageLimits(userId: string, feature: string) {
+  const usage = await db
     .select()
-    .from(subscriptionPlans)
-    .where(eq(subscriptionPlans.id, userSub[0].plan_id))
+    .from(subscriptionUsage)
+    .where(
+      and(
+        eq(subscriptionUsage.userId, userId),
+        eq(subscriptionUsage.feature, feature)
+      )
+    )
     .limit(1);
 
-  if (plan.length === 0) {
-    return { hasLimit: true, limit: feature === 'document_analysis' ? 50 : 25 };
+  if (usage.length === 0) {
+    return { exceeded: false, remaining: 0 };
   }
 
-  const planFeatures = plan[0].features as any;
-  const limit = planFeatures[feature]?.limit;
+  const currentUsage = usage[0];
+  const exceeded = currentUsage.usage >= currentUsage.limit;
+  const remaining = Math.max(0, currentUsage.limit - currentUsage.usage);
 
-  if (limit === null || limit === undefined) {
-    // Unlimited
-    return { hasLimit: false, limit: null };
-  }
-
-  // Get current usage
-  const now = new Date();
-  const periodStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  
-  const usage = await getUserUsage(userId, feature, periodStart, periodEnd);
-  const currentUsage = usage.length > 0 ? usage[0].usage_count : 0;
-
-  return {
-    hasLimit: true,
-    limit,
-    currentUsage,
-    remaining: limit - currentUsage,
-  };
+  return { exceeded, remaining };
 }
 
 /**
- * Get payment records for a user
+ * Get subscription analytics
  */
-export async function getUserPayments(userId: string) {
-  return await db
-    .select()
-    .from(payments)
-    .where(eq(payments.user_id, userId))
-    .orderBy(payments.created_at);
+export async function getSubscriptionAnalytics(userId: string) {
+  const subscription = await getUserSubscription(userId);
+  const usage = await getUserSubscriptionUsage(userId);
+
+  const totalUsage = usage.reduce((sum, item) => sum + item.usage, 0);
+  const totalLimit = usage.reduce((sum, item) => sum + item.limit, 0);
+  const usagePercentage = totalLimit > 0 ? (totalUsage / totalLimit) * 100 : 0;
+
+  return {
+    subscription,
+    usage,
+    totalUsage,
+    totalLimit,
+    usagePercentage,
+  };
 }
