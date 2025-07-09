@@ -1,59 +1,92 @@
 import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
 import { useLoaderData } from "@remix-run/react";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, gte, lte, sum, count, avg } from "drizzle-orm";
 import { z } from "zod";
 
-import { db } from "~/core/db/drizzle-client.server";
+import db from "~/core/db/drizzle-client.server";
 import { requireUser } from "~/core/lib/guards.server";
-import { companyDocuments, documentChunks, documentQA, knowledgeBase } from "~/features/lukas-ai/schema";
+import { 
+  companyDocuments, 
+  documentChunks, 
+  documentQA, 
+  knowledgeBase 
+} from "~/features/lukas-ai/schema";
 
 // Document upload schema
-const uploadDocumentSchema = z.object({
-  title: z.string().min(1, "문서 제목을 입력해주세요"),
+const documentUploadSchema = z.object({
+  title: z.string().min(1, "제목을 입력해주세요"),
   description: z.string().optional(),
-  fileName: z.string().min(1, "파일명이 필요합니다"),
-  fileSize: z.number().optional(),
-  fileType: z.string().min(1, "파일 타입이 필요합니다"),
-  fileUrl: z.string().optional(),
-  content: z.string().optional(),
-  isPrivate: z.boolean().default(true),
+  fileUrl: z.string().url("파일 URL을 입력해주세요"),
+  fileType: z.string().min(1, "파일 타입을 입력해주세요"),
+  fileSize: z.number().min(1, "파일 크기를 입력해주세요"),
+  isPrivate: z.boolean().default(false),
+  tags: z.array(z.string()).optional(),
 });
 
-// Document Q&A schema
-const documentQASchema = z.object({
-  documentId: z.string().uuid("유효한 문서 ID가 필요합니다"),
-  question: z.string().min(1, "질문을 입력해주세요"),
+// Document chunk schema
+const documentChunkSchema = z.object({
+  documentId: z.string().min(1, "문서 ID를 입력해주세요"),
+  content: z.string().min(1, "내용을 입력해주세요"),
+  chunkIndex: z.number().min(0, "청크 인덱스를 입력해주세요"),
+  embedding: z.array(z.number()).optional(),
 });
 
-// Knowledge base entry schema
+// Knowledge base schema
 const knowledgeBaseSchema = z.object({
   title: z.string().min(1, "제목을 입력해주세요"),
-  content: z.string().min(1, "내용을 입력해주세요"),
-  category: z.string().optional(),
-  tags: z.array(z.string()).optional(),
+  description: z.string().min(1, "설명을 입력해주세요"),
   sourceDocuments: z.array(z.string()).optional(),
+  isPublic: z.boolean().default(false),
+  tags: z.array(z.string()).optional(),
 });
 
 export async function loader({ request }: LoaderFunctionArgs) {
   const user = await requireUser(request);
+  const url = new URL(request.url);
+  const search = url.searchParams.get("search");
+  const type = url.searchParams.get("type");
   
   // Get user's documents
-  const documents = await db
+  let documentsQuery = db
     .select()
     .from(companyDocuments)
     .where(eq(companyDocuments.userId, user.id))
-    .orderBy(desc(companyDocuments.createdAt));
+    .orderBy(desc(companyDocuments.created_at));
 
-  // Get user's knowledge base entries
-  const knowledgeEntries = await db
+  if (search) {
+    documentsQuery = documentsQuery.where(
+      // Add search functionality here
+      eq(companyDocuments.title, search)
+    );
+  }
+
+  if (type) {
+    documentsQuery = documentsQuery.where(
+      eq(companyDocuments.fileType, type)
+    );
+  }
+
+  const documents = await documentsQuery;
+
+  // Get knowledge bases
+  const knowledgeBases = await db
     .select()
     .from(knowledgeBase)
     .where(eq(knowledgeBase.userId, user.id))
-    .orderBy(desc(knowledgeBase.createdAt));
+    .orderBy(desc(knowledgeBase.created_at));
+
+  // Get recent Q&A
+  const recentQa = await db
+    .select()
+    .from(documentQA)
+    .where(eq(documentQA.userId, user.id))
+    .orderBy(desc(documentQA.created_at))
+    .limit(10);
 
   return json({
     documents,
-    knowledgeEntries,
+    knowledgeBases,
+    recentQa,
   });
 }
 
@@ -65,15 +98,14 @@ export async function action({ request }: ActionFunctionArgs) {
   try {
     switch (action) {
       case "upload-document": {
-        const data = uploadDocumentSchema.parse({
+        const data = documentUploadSchema.parse({
           title: formData.get("title"),
           description: formData.get("description"),
-          fileName: formData.get("fileName"),
-          fileSize: formData.get("fileSize") ? Number(formData.get("fileSize")) : undefined,
-          fileType: formData.get("fileType"),
           fileUrl: formData.get("fileUrl"),
-          content: formData.get("content"),
+          fileType: formData.get("fileType"),
+          fileSize: formData.get("fileSize") ? Number(formData.get("fileSize")) : 0,
           isPrivate: formData.get("isPrivate") === "true",
+          tags: formData.get("tags") ? JSON.parse(formData.get("tags") as string) : [],
         });
 
         const [document] = await db
@@ -87,6 +119,44 @@ export async function action({ request }: ActionFunctionArgs) {
         return json({ success: true, document });
       }
 
+      case "add-document-chunk": {
+        const data = documentChunkSchema.parse({
+          documentId: formData.get("documentId"),
+          content: formData.get("content"),
+          chunkIndex: formData.get("chunkIndex") ? Number(formData.get("chunkIndex")) : 0,
+          embedding: formData.get("embedding") ? JSON.parse(formData.get("embedding") as string) : undefined,
+        });
+
+        const [chunk] = await db
+          .insert(documentChunks)
+          .values({
+            ...data,
+          })
+          .returning();
+
+        return json({ success: true, chunk });
+      }
+
+      case "create-knowledge-base": {
+        const data = knowledgeBaseSchema.parse({
+          title: formData.get("title"),
+          description: formData.get("description"),
+          sourceDocuments: formData.get("sourceDocuments") ? JSON.parse(formData.get("sourceDocuments") as string) : [],
+          isPublic: formData.get("isPublic") === "true",
+          tags: formData.get("tags") ? JSON.parse(formData.get("tags") as string) : [],
+        });
+
+        const [kb] = await db
+          .insert(knowledgeBase)
+          .values({
+            userId: user.id,
+            ...data,
+          })
+          .returning();
+
+        return json({ success: true, knowledgeBase: kb });
+      }
+
       case "delete-document": {
         const documentId = formData.get("documentId") as string;
         
@@ -97,77 +167,22 @@ export async function action({ request }: ActionFunctionArgs) {
         return json({ success: true });
       }
 
-      case "ask-question": {
-        const data = documentQASchema.parse({
-          documentId: formData.get("documentId"),
-          question: formData.get("question"),
-        });
-
-        // Get document content
-        const [document] = await db
-          .select()
-          .from(companyDocuments)
-          .where(eq(companyDocuments.id, data.documentId));
-
-        if (!document) {
-          return json({ error: "문서를 찾을 수 없습니다" }, { status: 404 });
-        }
-
-        // Simulate AI answer (in real implementation, this would use AI service)
-        const answer = `문서 "${document.title}"에 대한 질문: "${data.question}"\n\nAI 답변: 이 문서의 내용을 바탕으로 한 답변입니다. 실제 구현에서는 AI 서비스를 통해 정확한 답변을 생성합니다.`;
-
-        const [qa] = await db
-          .insert(documentQA)
-          .values({
-            userId: user.id,
-            documentId: data.documentId,
-            question: data.question,
-            answer,
-            confidence: 85,
-          })
-          .returning();
-
-        return json({ success: true, qa });
-      }
-
-      case "create-knowledge-entry": {
-        const data = knowledgeBaseSchema.parse({
-          title: formData.get("title"),
-          content: formData.get("content"),
-          category: formData.get("category"),
-          tags: formData.get("tags") ? JSON.parse(formData.get("tags") as string) : undefined,
-          sourceDocuments: formData.get("sourceDocuments") ? JSON.parse(formData.get("sourceDocuments") as string) : undefined,
-        });
-
-        const [entry] = await db
-          .insert(knowledgeBase)
-          .values({
-            userId: user.id,
-            ...data,
-          })
-          .returning();
-
-        return json({ success: true, entry });
-      }
-
-      case "delete-knowledge-entry": {
-        const entryId = formData.get("entryId") as string;
+      case "delete-knowledge-base": {
+        const kbId = formData.get("kbId") as string;
         
         await db
           .delete(knowledgeBase)
-          .where(eq(knowledgeBase.id, entryId));
+          .where(eq(knowledgeBase.id, kbId));
 
         return json({ success: true });
       }
 
       default:
-        return json({ error: "알 수 없는 액션입니다" }, { status: 400 });
+        return json({ error: "Invalid action" }, { status: 400 });
     }
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return json({ error: error.errors[0]?.message || "입력 데이터가 유효하지 않습니다" }, { status: 400 });
-    }
-    return json({ error: "서버 오류가 발생했습니다" }, { status: 500 });
+    console.error("Documents action error:", error);
+    return json({ error: "Internal server error" }, { status: 500 });
   }
 }
 

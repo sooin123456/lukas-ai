@@ -22,6 +22,28 @@ npx drizzle-kit push
 ### 1.3 RLS (Row Level Security) 활성화
 Supabase Dashboard → Authentication → Policies에서 각 테이블의 RLS 정책이 활성화되어 있는지 확인
 
+## 🚀 **Vercel 환경변수 설정**
+
+Vercel Dashboard에서 다음 환경변수들을 설정해주세요:
+
+### **Supabase 설정**
+```
+SUPABASE_URL=https://xylezpqstzqbtcckaabh.supabase.co
+SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5bGV6cHFzdHpxYnRjY2thYWJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTE5NDg2MDMsImV4cCI6MjA2NzUyNDYwM30.yeDhDAINPOGI8oX_8CXWhvnrcr7EwwD_FdziP0j9Chc
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh5bGV6cHFzdHpxYnRjY2thYWJoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MTk0ODYwMywiZXhwIjoyMDY3NTI0NjAzfQ.dVVkUIs3mwll5Gk-Qa7efazx7kEk5XagI7NK3FsVAfE
+```
+
+### **기본 앱 설정**
+```
+NODE_ENV=production
+SITE_URL=https://your-vercel-domain.vercel.app
+COOKIE_SECRET=your_random_secret_key_here
+```
+
+**Vercel Dashboard**에서 이 환경변수들을 설정하시면, 다음 단계로 데이터베이스 마이그레이션을 진행하겠습니다! 
+
+환경변수 설정이 완료되면 알려주세요!
+
 ## 2. Vercel 배포
 
 ### 2.1 Vercel 프로젝트 생성

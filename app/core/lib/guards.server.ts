@@ -113,3 +113,28 @@ export function requireMethod(method: string) {
     }
   };
 }
+
+/**
+ * Require user authentication and return user data
+ * 
+ * This function checks if a user is currently authenticated and returns the user data.
+ * If no user is found, it throws a 401 Unauthorized response.
+ * 
+ * @param request - The request object
+ * @returns The authenticated user data
+ * @throws {Response} 401 Unauthorized if no user is authenticated
+ */
+export async function requireUser(request: Request) {
+  const makeServerClient = (await import("~/core/lib/supa-client.server")).default;
+  const [client] = makeServerClient(request);
+  
+  const {
+    data: { user },
+  } = await client.auth.getUser();
+  
+  if (!user) {
+    throw data(null, { status: 401 });
+  }
+
+  return user;
+}

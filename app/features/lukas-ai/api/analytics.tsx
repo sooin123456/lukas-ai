@@ -3,7 +3,7 @@ import { useLoaderData } from "@remix-run/react";
 import { eq, desc, and, gte, lte, sum, count, avg } from "drizzle-orm";
 import { z } from "zod";
 
-import { db } from "~/core/db/drizzle-client.server";
+import db from "~/core/db/drizzle-client.server";
 import { requireUser } from "~/core/lib/guards.server";
 import { 
   aiUsageTracking, 
@@ -93,7 +93,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     .where(
       and(
         eq(aiUsageTracking.userId, user.id),
-        gte(aiUsageTracking.createdAt, startDate)
+        gte(aiUsageTracking.created_at, startDate)
       )
     )
     .groupBy(aiUsageTracking.feature);
@@ -133,7 +133,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     .select()
     .from(aiOptimizationSuggestions)
     .where(eq(aiOptimizationSuggestions.userId, user.id))
-    .orderBy(desc(aiOptimizationSuggestions.createdAt));
+    .orderBy(desc(aiOptimizationSuggestions.created_at));
 
   // Get recent usage data for charts
   const recentUsage = await db
@@ -142,16 +142,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
     .where(
       and(
         eq(aiUsageTracking.userId, user.id),
-        gte(aiUsageTracking.createdAt, startDate)
+        gte(aiUsageTracking.created_at, startDate)
       )
     )
-    .orderBy(desc(aiUsageTracking.createdAt))
+    .orderBy(desc(aiUsageTracking.created_at))
     .limit(50);
 
   // Calculate summary statistics
-  const totalCost = usageStats.reduce((sum, stat) => sum + (Number(stat.totalCost) || 0), 0);
-  const totalTokens = usageStats.reduce((sum, stat) => sum + (Number(stat.totalTokens) || 0), 0);
-  const totalRequests = usageStats.reduce((sum, stat) => sum + (Number(stat.totalRequests) || 0), 0);
+  const totalCost = usageStats.reduce((sum: number, stat: any) => sum + (Number(stat.totalCost) || 0), 0);
+  const totalTokens = usageStats.reduce((sum: number, stat: any) => sum + (Number(stat.totalTokens) || 0), 0);
+  const totalRequests = usageStats.reduce((sum: number, stat: any) => sum + (Number(stat.totalRequests) || 0), 0);
 
   return json({
     usageStats,
@@ -292,13 +292,11 @@ export async function action({ request }: ActionFunctionArgs) {
       }
 
       default:
-        return json({ error: "알 수 없는 액션입니다" }, { status: 400 });
+        return json({ error: "Invalid action" }, { status: 400 });
     }
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return json({ error: error.errors[0]?.message || "입력 데이터가 유효하지 않습니다" }, { status: 400 });
-    }
-    return json({ error: "서버 오류가 발생했습니다" }, { status: 500 });
+    console.error("Analytics action error:", error);
+    return json({ error: "Internal server error" }, { status: 500 });
   }
 }
 
