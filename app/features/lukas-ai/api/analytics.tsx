@@ -2,7 +2,6 @@ import { data } from "react-router";
 import { z } from "zod";
 import { eq, and, gte, lte, sql } from "drizzle-orm";
 
-import { requireUser } from "~/core/lib/guards.server";
 import db from "~/core/db/drizzle-client.server";
 import {
   aiUsageTracking,
@@ -133,10 +132,11 @@ export async function action({ request }: any) {
           feature: feature as string,
           model: model as string,
           tokensUsed: parseInt(tokensUsed as string),
-          cost: parseFloat(cost as string),
+          inputTokens: parseInt(tokensUsed as string) / 2, // Temporary calculation
+          outputTokens: parseInt(tokensUsed as string) / 2, // Temporary calculation
+          cost: cost as string,
           responseTime: parseInt(responseTime as string),
           success: success === "true",
-          created_at: new Date(),
         });
 
       return data({ success: true });
@@ -151,7 +151,7 @@ export async function action({ request }: any) {
           userId: user.id,
           feature: feature as string,
           metric: metric as string,
-          value: parseFloat(value as string),
+          value: value as string,
           unit: unit as string,
           date: new Date(),
         });
@@ -170,9 +170,9 @@ export async function action({ request }: any) {
           period: period as string,
           startDate: new Date(startDate as string),
           endDate: new Date(endDate as string),
-          totalCost: parseFloat(totalCost as string),
+          totalCost: totalCost as string,
           featureCosts: featureCosts as string,
-          tokenUsage: parseInt(tokenUsage as string),
+          tokenUsage: tokenUsage as string,
         });
 
       return data({ success: true });
@@ -190,10 +190,9 @@ export async function action({ request }: any) {
           title: title as string,
           description: description as string,
           impact: impact as string,
-          estimatedSavings: parseFloat(estimatedSavings as string),
+          estimatedSavings: estimatedSavings as string,
           implementation: implementation as string,
           isApplied: false,
-          created_at: new Date(),
         });
 
       return data({ success: true });

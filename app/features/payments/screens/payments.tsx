@@ -42,11 +42,11 @@ export async function loader({ request }: Route.LoaderArgs) {
   
   const { data: { user } } = await client.auth.getUser();
   const plans = await getSubscriptionPlans();
-  const userSubscription = user ? await getUserSubscription(user.id) : [];
+  const userSubscription = user ? await getUserSubscription(user.id) : null;
 
   return {
     plans,
-    currentSubscription: userSubscription.length > 0 ? userSubscription[0] : null,
+    currentSubscription: userSubscription,
   };
 }
 

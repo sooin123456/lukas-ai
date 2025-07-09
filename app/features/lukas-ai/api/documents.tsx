@@ -2,7 +2,6 @@ import { data } from "react-router";
 import { z } from "zod";
 import { eq, and, like, desc, sql } from "drizzle-orm";
 
-import { requireUser } from "~/core/lib/guards.server";
 import db from "~/core/db/drizzle-client.server";
 import {
   companyDocuments,
