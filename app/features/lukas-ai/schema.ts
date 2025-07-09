@@ -2,7 +2,11 @@ import { sql } from "drizzle-orm";
 import { pgPolicy, pgTable, text, timestamp, uuid, jsonb, integer, boolean, decimal } from "drizzle-orm/pg-core";
 import { authUid, authenticatedRole } from "drizzle-orm/supabase";
 
-import { timestamps } from "~/core/db/helpers.server";
+// Define timestamps directly to avoid server-only module import
+const timestamps = {
+  updated_at: timestamp().defaultNow().notNull(),
+  created_at: timestamp().defaultNow().notNull(),
+};
 
 /**
  * AI Usage Tracking Table

@@ -1,191 +1,180 @@
-import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
-import { eq, desc, and, gte, lte, sum, count, avg } from "drizzle-orm";
-import { z } from "zod";
-
-import db from "~/core/db/drizzle-client.server";
+import { data } from "react-router";
+import { eq, and, gte, lte } from "drizzle-orm";
 import { requireUser } from "~/core/lib/guards.server";
-import { 
-  companyDocuments, 
-  documentChunks, 
-  documentQA, 
-  knowledgeBase 
-} from "~/features/lukas-ai/schema";
+import db from "~/core/db/drizzle-client.server";
+import {
+  companyDocuments,
+  documentChunks,
+  documentQA,
+  knowledgeBase,
+} from "../schema";
 
-// Document upload schema
-const documentUploadSchema = z.object({
-  title: z.string().min(1, "제목을 입력해주세요"),
-  description: z.string().optional(),
-  fileUrl: z.string().url("파일 URL을 입력해주세요"),
-  fileType: z.string().min(1, "파일 타입을 입력해주세요"),
-  fileSize: z.number().min(1, "파일 크기를 입력해주세요"),
-  isPrivate: z.boolean().default(false),
-  tags: z.array(z.string()).optional(),
-});
-
-// Document chunk schema
-const documentChunkSchema = z.object({
-  documentId: z.string().min(1, "문서 ID를 입력해주세요"),
-  content: z.string().min(1, "내용을 입력해주세요"),
-  chunkIndex: z.number().min(0, "청크 인덱스를 입력해주세요"),
-  embedding: z.array(z.number()).optional(),
-});
-
-// Knowledge base schema
-const knowledgeBaseSchema = z.object({
-  title: z.string().min(1, "제목을 입력해주세요"),
-  description: z.string().min(1, "설명을 입력해주세요"),
-  sourceDocuments: z.array(z.string()).optional(),
-  isPublic: z.boolean().default(false),
-  tags: z.array(z.string()).optional(),
-});
-
-export async function loader({ request }: LoaderFunctionArgs) {
+export async function loader({ request }: any) {
   const user = await requireUser(request);
   const url = new URL(request.url);
   const search = url.searchParams.get("search");
-  const type = url.searchParams.get("type");
+  const isPrivate = url.searchParams.get("isPrivate") === "true";
   
-  // Get user's documents
-  let documentsQuery = db
-    .select()
-    .from(companyDocuments)
-    .where(eq(companyDocuments.userId, user.id))
-    .orderBy(desc(companyDocuments.created_at));
-
+  // Build where conditions
+  const conditions = [eq(companyDocuments.userId, user.id)];
+  
   if (search) {
-    documentsQuery = documentsQuery.where(
-      // Add search functionality here
-      eq(companyDocuments.title, search)
-    );
+    conditions.push(eq(companyDocuments.title, search));
   }
 
-  if (type) {
-    documentsQuery = documentsQuery.where(
-      eq(companyDocuments.fileType, type)
-    );
+  if (isPrivate !== null) {
+    conditions.push(eq(companyDocuments.isPrivate, isPrivate));
   }
 
-  const documents = await documentsQuery;
+  // Get documents
+  const documents = await db
+    .select({
+      id: companyDocuments.id,
+      title: companyDocuments.title,
+      description: companyDocuments.description,
+      fileName: companyDocuments.fileName,
+      fileSize: companyDocuments.fileSize,
+      fileType: companyDocuments.fileType,
+      fileUrl: companyDocuments.fileUrl,
+      content: companyDocuments.content,
+      status: companyDocuments.status,
+      isPrivate: companyDocuments.isPrivate,
+      created_at: companyDocuments.created_at,
+      updated_at: companyDocuments.updated_at,
+    })
+    .from(companyDocuments)
+    .where(and(...conditions))
+    .orderBy(companyDocuments.created_at);
 
-  // Get knowledge bases
-  const knowledgeBases = await db
-    .select()
+  // Get knowledge base entries
+  const knowledgeEntries = await db
+    .select({
+      id: knowledgeBase.id,
+      title: knowledgeBase.title,
+      content: knowledgeBase.content,
+      category: knowledgeBase.category,
+      tags: knowledgeBase.tags,
+      sourceDocuments: knowledgeBase.sourceDocuments,
+      created_at: knowledgeBase.created_at,
+    })
     .from(knowledgeBase)
     .where(eq(knowledgeBase.userId, user.id))
-    .orderBy(desc(knowledgeBase.created_at));
+    .orderBy(knowledgeBase.created_at);
 
-  // Get recent Q&A
+  // Get recent Q&A interactions
   const recentQa = await db
-    .select()
+    .select({
+      id: documentQA.id,
+      question: documentQA.question,
+      answer: documentQA.answer,
+      documentId: documentQA.documentId,
+      confidence: documentQA.confidence,
+      created_at: documentQA.created_at,
+    })
     .from(documentQA)
     .where(eq(documentQA.userId, user.id))
-    .orderBy(desc(documentQA.created_at))
+    .orderBy(documentQA.created_at)
     .limit(10);
 
-  return json({
+  return data({
     documents,
-    knowledgeBases,
+    knowledgeEntries,
     recentQa,
   });
 }
 
-export async function action({ request }: ActionFunctionArgs) {
+export async function action({ request }: any) {
   const user = await requireUser(request);
   const formData = await request.formData();
   const action = formData.get("action") as string;
 
-  try {
-    switch (action) {
-      case "upload-document": {
-        const data = documentUploadSchema.parse({
-          title: formData.get("title"),
-          description: formData.get("description"),
-          fileUrl: formData.get("fileUrl"),
-          fileType: formData.get("fileType"),
-          fileSize: formData.get("fileSize") ? Number(formData.get("fileSize")) : 0,
-          isPrivate: formData.get("isPrivate") === "true",
-          tags: formData.get("tags") ? JSON.parse(formData.get("tags") as string) : [],
+  switch (action) {
+    case "upload_document": {
+      const title = formData.get("title") as string;
+      const description = formData.get("description") as string;
+      const fileName = formData.get("fileName") as string;
+      const fileSize = parseInt(formData.get("fileSize") as string);
+      const fileType = formData.get("fileType") as string;
+      const fileUrl = formData.get("fileUrl") as string;
+      const isPrivate = formData.get("isPrivate") === "true";
+
+      await db
+        .insert(companyDocuments)
+        .values({
+          userId: user.id,
+          title,
+          description,
+          fileName,
+          fileSize,
+          fileType,
+          fileUrl,
+          isPrivate,
         });
 
-        const [document] = await db
-          .insert(companyDocuments)
-          .values({
-            userId: user.id,
-            ...data,
-          })
-          .returning();
-
-        return json({ success: true, document });
-      }
-
-      case "add-document-chunk": {
-        const data = documentChunkSchema.parse({
-          documentId: formData.get("documentId"),
-          content: formData.get("content"),
-          chunkIndex: formData.get("chunkIndex") ? Number(formData.get("chunkIndex")) : 0,
-          embedding: formData.get("embedding") ? JSON.parse(formData.get("embedding") as string) : undefined,
-        });
-
-        const [chunk] = await db
-          .insert(documentChunks)
-          .values({
-            ...data,
-          })
-          .returning();
-
-        return json({ success: true, chunk });
-      }
-
-      case "create-knowledge-base": {
-        const data = knowledgeBaseSchema.parse({
-          title: formData.get("title"),
-          description: formData.get("description"),
-          sourceDocuments: formData.get("sourceDocuments") ? JSON.parse(formData.get("sourceDocuments") as string) : [],
-          isPublic: formData.get("isPublic") === "true",
-          tags: formData.get("tags") ? JSON.parse(formData.get("tags") as string) : [],
-        });
-
-        const [kb] = await db
-          .insert(knowledgeBase)
-          .values({
-            userId: user.id,
-            ...data,
-          })
-          .returning();
-
-        return json({ success: true, knowledgeBase: kb });
-      }
-
-      case "delete-document": {
-        const documentId = formData.get("documentId") as string;
-        
-        await db
-          .delete(companyDocuments)
-          .where(eq(companyDocuments.id, documentId));
-
-        return json({ success: true });
-      }
-
-      case "delete-knowledge-base": {
-        const kbId = formData.get("kbId") as string;
-        
-        await db
-          .delete(knowledgeBase)
-          .where(eq(knowledgeBase.id, kbId));
-
-        return json({ success: true });
-      }
-
-      default:
-        return json({ error: "Invalid action" }, { status: 400 });
+      return data({ success: true });
     }
-  } catch (error) {
-    console.error("Documents action error:", error);
-    return json({ error: "Internal server error" }, { status: 500 });
-  }
-}
 
-export function useDocumentsData() {
-  return useLoaderData<typeof loader>();
+    case "add_knowledge": {
+      const title = formData.get("title") as string;
+      const description = formData.get("description") as string;
+      const tags = formData.get("tags") ? JSON.parse(formData.get("tags") as string) : null;
+      const sourceDocuments = formData.get("sourceDocuments") ? JSON.parse(formData.get("sourceDocuments") as string) : null;
+
+      await db
+        .insert(knowledgeBase)
+        .values({
+          userId: user.id,
+          title,
+          content: description,
+          tags,
+          sourceDocuments,
+        });
+
+      return data({ success: true });
+    }
+
+    case "ask_question": {
+      const question = formData.get("question") as string;
+      const documentId = formData.get("documentId") as string;
+      const answer = formData.get("answer") as string;
+      const confidence = parseFloat(formData.get("confidence") as string) || 0;
+      const sources = formData.get("sources") ? JSON.parse(formData.get("sources") as string) : null;
+
+      await db
+        .insert(documentQA)
+        .values({
+          userId: user.id,
+          question,
+          answer,
+          documentId,
+          confidence,
+          sourceChunks: sources,
+        });
+
+      return data({ success: true });
+    }
+
+    case "delete_document": {
+      const documentId = formData.get("documentId") as string;
+
+      await db
+        .delete(companyDocuments)
+        .where(eq(companyDocuments.id, documentId));
+
+      return data({ success: true });
+    }
+
+    case "delete_knowledge": {
+      const knowledgeId = formData.get("knowledgeId") as string;
+
+      await db
+        .delete(knowledgeBase)
+        .where(eq(knowledgeBase.id, knowledgeId));
+
+      return data({ success: true });
+    }
+
+    default:
+      return data({ error: "Invalid action" }, { status: 400 });
+  }
 } 

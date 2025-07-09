@@ -5,12 +5,6 @@ import { vercelPreset } from "@vercel/react-router/vite";
 import { readdir } from "node:fs/promises";
 import path from "path";
 
-declare module "react-router" {
-  interface Future {
-    unstable_middleware: true;
-  }
-}
-
 const urls = (
   await readdir(path.join(process.cwd(), "app", "features", "blog", "docs"))
 )

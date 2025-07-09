@@ -1,314 +1,260 @@
-import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
-import { eq, desc, and, gte, lte, sum, count, avg } from "drizzle-orm";
-import { z } from "zod";
-
-import db from "~/core/db/drizzle-client.server";
+import { data } from "react-router";
+import { eq, and, gte, lte } from "drizzle-orm";
 import { requireUser } from "~/core/lib/guards.server";
-import { 
-  calendarEvents, 
-  automatedTasks, 
-  taskExecutions, 
-  timeTracking, 
-  workflows 
-} from "~/features/lukas-ai/schema";
+import db from "~/core/db/drizzle-client.server";
+import {
+  calendarEvents,
+  automatedTasks,
+  taskExecutions,
+  timeTracking,
+  workflows,
+} from "../schema";
 
-// Calendar event schema
-const calendarEventSchema = z.object({
-  title: z.string().min(1, "제목을 입력해주세요"),
-  description: z.string().optional(),
-  startTime: z.string().datetime("시작 시간을 입력해주세요"),
-  endTime: z.string().datetime("종료 시간을 입력해주세요"),
-  type: z.enum(["meeting", "task", "reminder", "deadline"]),
-  priority: z.enum(["low", "medium", "high", "urgent"]).default("medium"),
-  location: z.string().optional(),
-  attendees: z.array(z.string()).optional(),
-  recurrence: z.record(z.any()).optional(),
-  reminders: z.array(z.record(z.any())).optional(),
-  tags: z.array(z.string()).optional(),
-});
-
-// Automated task schema
-const automatedTaskSchema = z.object({
-  name: z.string().min(1, "작업명을 입력해주세요"),
-  description: z.string().optional(),
-  type: z.enum(["email", "notification", "data_processing", "report_generation"]),
-  trigger: z.enum(["schedule", "event", "condition"]),
-  triggerConfig: z.record(z.any()).optional(),
-  action: z.enum(["send_email", "create_notification", "update_data", "generate_report"]),
-  actionConfig: z.record(z.any()).optional(),
-});
-
-// Time tracking schema
-const timeTrackingSchema = z.object({
-  taskName: z.string().min(1, "작업명을 입력해주세요"),
-  category: z.string().optional(),
-  startTime: z.string().datetime("시작 시간을 입력해주세요"),
-  endTime: z.string().datetime("종료 시간을 입력해주세요").optional(),
-  duration: z.number().optional(),
-  description: z.string().optional(),
-  tags: z.array(z.string()).optional(),
-});
-
-// Workflow schema
-const workflowSchema = z.object({
-  name: z.string().min(1, "워크플로우명을 입력해주세요"),
-  description: z.string().optional(),
-  steps: z.array(z.record(z.any())).optional(),
-  triggers: z.array(z.record(z.any())).optional(),
-});
-
-export async function loader({ request }: LoaderFunctionArgs) {
+export async function loader({ request }: any) {
   const user = await requireUser(request);
   const url = new URL(request.url);
   const startDate = url.searchParams.get("startDate");
   const endDate = url.searchParams.get("endDate");
+  const type = url.searchParams.get("type");
   
-  // Get calendar events
-  let eventsQuery = db
-    .select()
-    .from(calendarEvents)
-    .where(eq(calendarEvents.userId, user.id))
-    .orderBy(desc(calendarEvents.startTime));
-
+  // Build where conditions for events
+  const eventConditions: any[] = [eq(calendarEvents.userId, user.id)];
   if (startDate && endDate) {
-    eventsQuery = eventsQuery.where(
+    eventConditions.push(
       and(
         gte(calendarEvents.startTime, new Date(startDate)),
         lte(calendarEvents.endTime, new Date(endDate))
       )
     );
   }
+  if (type) {
+    eventConditions.push(eq(calendarEvents.type, type));
+  }
 
-  const events = await eventsQuery;
+  // Get calendar events
+  const events = await db
+    .select({
+      id: calendarEvents.id,
+      title: calendarEvents.title,
+      description: calendarEvents.description,
+      startTime: calendarEvents.startTime,
+      endTime: calendarEvents.endTime,
+      type: calendarEvents.type,
+      priority: calendarEvents.priority,
+      status: calendarEvents.status,
+      location: calendarEvents.location,
+      attendees: calendarEvents.attendees,
+      recurrence: calendarEvents.recurrence,
+      reminders: calendarEvents.reminders,
+      tags: calendarEvents.tags,
+      created_at: calendarEvents.created_at,
+    })
+    .from(calendarEvents)
+    .where(and(...eventConditions))
+    .orderBy(calendarEvents.startTime);
 
   // Get automated tasks
   const tasks = await db
-    .select()
+    .select({
+      id: automatedTasks.id,
+      name: automatedTasks.name,
+      description: automatedTasks.description,
+      type: automatedTasks.type,
+      trigger: automatedTasks.trigger,
+      triggerConfig: automatedTasks.triggerConfig,
+      action: automatedTasks.action,
+      actionConfig: automatedTasks.actionConfig,
+      isActive: automatedTasks.isActive,
+      lastExecuted: automatedTasks.lastExecuted,
+      nextExecution: automatedTasks.nextExecution,
+      executionCount: automatedTasks.executionCount,
+      successCount: automatedTasks.successCount,
+      failureCount: automatedTasks.failureCount,
+      created_at: automatedTasks.created_at,
+    })
     .from(automatedTasks)
     .where(eq(automatedTasks.userId, user.id))
-    .orderBy(desc(automatedTasks.created_at));
+    .orderBy(automatedTasks.created_at);
 
   // Get task executions
   const executions = await db
-    .select()
+    .select({
+      id: taskExecutions.id,
+      taskId: taskExecutions.taskId,
+      status: taskExecutions.status,
+      startTime: taskExecutions.startTime,
+      endTime: taskExecutions.endTime,
+      duration: taskExecutions.duration,
+      result: taskExecutions.result,
+      error: taskExecutions.error,
+      created_at: taskExecutions.created_at,
+    })
     .from(taskExecutions)
-    .where(eq(taskExecutions.userId, user.id))
-    .orderBy(desc(taskExecutions.executedAt))
+    .where(eq(taskExecutions.taskId, automatedTasks.id))
+    .orderBy(taskExecutions.startTime)
     .limit(20);
 
   // Get time tracking entries
   const timeEntries = await db
-    .select()
+    .select({
+      id: timeTracking.id,
+      taskName: timeTracking.taskName,
+      category: timeTracking.category,
+      startTime: timeTracking.startTime,
+      endTime: timeTracking.endTime,
+      duration: timeTracking.duration,
+      description: timeTracking.description,
+      tags: timeTracking.tags,
+      created_at: timeTracking.created_at,
+    })
     .from(timeTracking)
     .where(eq(timeTracking.userId, user.id))
-    .orderBy(desc(timeTracking.startTime))
-    .limit(20);
+    .orderBy(timeTracking.startTime)
+    .limit(50);
 
   // Get workflows
-  const workflowsData = await db
-    .select()
+  const workflowsList = await db
+    .select({
+      id: workflows.id,
+      name: workflows.name,
+      description: workflows.description,
+      steps: workflows.steps,
+      triggers: workflows.triggers,
+      isActive: workflows.isActive,
+      created_at: workflows.created_at,
+    })
     .from(workflows)
     .where(eq(workflows.userId, user.id))
-    .orderBy(desc(workflows.created_at));
+    .orderBy(workflows.created_at);
 
-  return json({
+  return data({
     events,
     tasks,
     executions,
     timeEntries,
-    workflows: workflowsData,
+    workflows: workflowsList,
   });
 }
 
-export async function action({ request }: ActionFunctionArgs) {
+export async function action({ request }: any) {
   const user = await requireUser(request);
   const formData = await request.formData();
   const action = formData.get("action") as string;
 
-  try {
-    switch (action) {
-      case "create-event": {
-        const data = calendarEventSchema.parse({
-          title: formData.get("title"),
-          description: formData.get("description"),
-          startTime: formData.get("startTime"),
-          endTime: formData.get("endTime"),
-          type: formData.get("type"),
-          priority: formData.get("priority"),
-          location: formData.get("location"),
-          attendees: formData.get("attendees") ? JSON.parse(formData.get("attendees") as string) : undefined,
-          recurrence: formData.get("recurrence") ? JSON.parse(formData.get("recurrence") as string) : undefined,
-          reminders: formData.get("reminders") ? JSON.parse(formData.get("reminders") as string) : undefined,
-          tags: formData.get("tags") ? JSON.parse(formData.get("tags") as string) : undefined,
+  switch (action) {
+    case "create_event": {
+      const title = formData.get("title") as string;
+      const description = formData.get("description") as string;
+      const startTime = new Date(formData.get("startTime") as string);
+      const endTime = new Date(formData.get("endTime") as string);
+      const type = formData.get("type") as string;
+      const priority = formData.get("priority") as string;
+      const location = formData.get("location") as string;
+      const attendees = formData.get("attendees") ? JSON.parse(formData.get("attendees") as string) : null;
+      const recurrence = formData.get("recurrence") ? JSON.parse(formData.get("recurrence") as string) : null;
+      const reminders = formData.get("reminders") ? JSON.parse(formData.get("reminders") as string) : null;
+      const tags = formData.get("tags") ? JSON.parse(formData.get("tags") as string) : null;
+
+      await db
+        .insert(calendarEvents)
+        .values({
+          userId: user.id,
+          title,
+          description,
+          startTime,
+          endTime,
+          type,
+          priority,
+          location,
+          attendees,
+          recurrence,
+          reminders,
+          tags,
         });
 
-        const [event] = await db
-          .insert(calendarEvents)
-          .values({
-            userId: user.id,
-            ...data,
-          })
-          .returning();
-
-        return json({ success: true, event });
-      }
-
-      case "update-event": {
-        const eventId = formData.get("eventId") as string;
-        const data = calendarEventSchema.partial().parse({
-          title: formData.get("title"),
-          description: formData.get("description"),
-          startTime: formData.get("startTime"),
-          endTime: formData.get("endTime"),
-          type: formData.get("type"),
-          priority: formData.get("priority"),
-          location: formData.get("location"),
-          attendees: formData.get("attendees") ? JSON.parse(formData.get("attendees") as string) : undefined,
-          recurrence: formData.get("recurrence") ? JSON.parse(formData.get("recurrence") as string) : undefined,
-          reminders: formData.get("reminders") ? JSON.parse(formData.get("reminders") as string) : undefined,
-          tags: formData.get("tags") ? JSON.parse(formData.get("tags") as string) : undefined,
-        });
-
-        const [event] = await db
-          .update(calendarEvents)
-          .set(data)
-          .where(eq(calendarEvents.id, eventId))
-          .returning();
-
-        return json({ success: true, event });
-      }
-
-      case "delete-event": {
-        const eventId = formData.get("eventId") as string;
-        
-        await db
-          .delete(calendarEvents)
-          .where(eq(calendarEvents.id, eventId));
-
-        return json({ success: true });
-      }
-
-      case "create-automated-task": {
-        const data = automatedTaskSchema.parse({
-          name: formData.get("name"),
-          description: formData.get("description"),
-          type: formData.get("type"),
-          trigger: formData.get("trigger"),
-          triggerConfig: formData.get("triggerConfig") ? JSON.parse(formData.get("triggerConfig") as string) : {},
-          action: formData.get("action"),
-          actionConfig: formData.get("actionConfig") ? JSON.parse(formData.get("actionConfig") as string) : {},
-        });
-
-        const [task] = await db
-          .insert(automatedTasks)
-          .values({
-            userId: user.id,
-            ...data,
-          })
-          .returning();
-
-        return json({ success: true, task });
-      }
-
-      case "toggle-task": {
-        const taskId = formData.get("taskId") as string;
-        const isActive = formData.get("isActive") === "true";
-        
-        const [task] = await db
-          .update(automatedTasks)
-          .set({ isActive })
-          .where(eq(automatedTasks.id, taskId))
-          .returning();
-
-        return json({ success: true, task });
-      }
-
-      case "delete-task": {
-        const taskId = formData.get("taskId") as string;
-        
-        await db
-          .delete(automatedTasks)
-          .where(eq(automatedTasks.id, taskId));
-
-        return json({ success: true });
-      }
-
-      case "start-time-tracking": {
-        const data = timeTrackingSchema.partial().parse({
-          taskName: formData.get("taskName"),
-          category: formData.get("category"),
-          startTime: formData.get("startTime"),
-          description: formData.get("description"),
-          tags: formData.get("tags") ? JSON.parse(formData.get("tags") as string) : undefined,
-        });
-
-        const [entry] = await db
-          .insert(timeTracking)
-          .values({
-            userId: user.id,
-            startTime: new Date(),
-            ...data,
-          })
-          .returning();
-
-        return json({ success: true, entry });
-      }
-
-      case "stop-time-tracking": {
-        const entryId = formData.get("entryId") as string;
-        const endTime = new Date();
-        
-        const [entry] = await db
-          .update(timeTracking)
-          .set({ 
-            endTime,
-            duration: Math.floor((endTime.getTime() - new Date().getTime()) / 60000), // Minutes
-          })
-          .where(eq(timeTracking.id, entryId))
-          .returning();
-
-        return json({ success: true, entry });
-      }
-
-      case "create-workflow": {
-        const data = workflowSchema.parse({
-          name: formData.get("name"),
-          description: formData.get("description"),
-          steps: formData.get("steps") ? JSON.parse(formData.get("steps") as string) : [],
-          triggers: formData.get("triggers") ? JSON.parse(formData.get("triggers") as string) : [],
-        });
-
-        const [workflow] = await db
-          .insert(workflows)
-          .values({
-            userId: user.id,
-            ...data,
-          })
-          .returning();
-
-        return json({ success: true, workflow });
-      }
-
-      case "delete-workflow": {
-        const workflowId = formData.get("workflowId") as string;
-        
-        await db
-          .delete(workflows)
-          .where(eq(workflows.id, workflowId));
-
-        return json({ success: true });
-      }
-
-      default:
-        return json({ error: "Invalid action" }, { status: 400 });
+      return data({ success: true });
     }
-  } catch (error) {
-    console.error("Schedule action error:", error);
-    return json({ error: "Internal server error" }, { status: 500 });
-  }
-}
 
-export function useScheduleData() {
-  return useLoaderData<typeof loader>();
+    case "update_event": {
+      const eventId = formData.get("eventId") as string;
+      const updateData = {
+        title: formData.get("title") as string,
+        description: formData.get("description") as string,
+        startTime: formData.get("startTime") ? new Date(formData.get("startTime") as string) : undefined,
+        endTime: formData.get("endTime") ? new Date(formData.get("endTime") as string) : undefined,
+        type: formData.get("type") as string,
+        priority: formData.get("priority") as string,
+        status: formData.get("status") as string,
+        location: formData.get("location") as string,
+        attendees: formData.get("attendees") ? JSON.parse(formData.get("attendees") as string) : undefined,
+        recurrence: formData.get("recurrence") ? JSON.parse(formData.get("recurrence") as string) : undefined,
+        reminders: formData.get("reminders") ? JSON.parse(formData.get("reminders") as string) : undefined,
+        tags: formData.get("tags") ? JSON.parse(formData.get("tags") as string) : undefined,
+      };
+
+      await db
+        .update(calendarEvents)
+        .set(updateData)
+        .where(eq(calendarEvents.id, eventId));
+
+      return data({ success: true });
+    }
+
+    case "delete_event": {
+      const eventId = formData.get("eventId") as string;
+
+      await db
+        .delete(calendarEvents)
+        .where(eq(calendarEvents.id, eventId));
+
+      return data({ success: true });
+    }
+
+    case "track_time": {
+      const taskName = formData.get("taskName") as string;
+      const category = formData.get("category") as string;
+      const startTime = new Date(formData.get("startTime") as string);
+      const endTime = formData.get("endTime") ? new Date(formData.get("endTime") as string) : undefined;
+      const duration = parseInt(formData.get("duration") as string) || 0;
+      const description = formData.get("description") as string;
+      const tags = formData.get("tags") ? JSON.parse(formData.get("tags") as string) : null;
+
+      await db
+        .insert(timeTracking)
+        .values({
+          userId: user.id,
+          taskName,
+          category,
+          startTime,
+          endTime,
+          duration,
+          description,
+          tags,
+        });
+
+      return data({ success: true });
+    }
+
+    case "create_workflow": {
+      const name = formData.get("name") as string;
+      const description = formData.get("description") as string;
+      const steps = formData.get("steps") ? JSON.parse(formData.get("steps") as string) : null;
+      const triggers = formData.get("triggers") ? JSON.parse(formData.get("triggers") as string) : null;
+
+      await db
+        .insert(workflows)
+        .values({
+          userId: user.id,
+          name,
+          description,
+          steps,
+          triggers,
+        });
+
+      return data({ success: true });
+    }
+
+    default:
+      return data({ error: "Invalid action" }, { status: 400 });
+  }
 } 

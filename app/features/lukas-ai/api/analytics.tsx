@@ -1,305 +1,221 @@
-import { json, type ActionFunctionArgs, type LoaderFunctionArgs } from "@remix-run/node";
-import { useLoaderData } from "@remix-run/react";
-import { eq, desc, and, gte, lte, sum, count, avg } from "drizzle-orm";
-import { z } from "zod";
-
-import db from "~/core/db/drizzle-client.server";
+import { data } from "react-router";
+import { eq, and, gte, lte, sql } from "drizzle-orm";
 import { requireUser } from "~/core/lib/guards.server";
-import { 
-  aiUsageTracking, 
-  aiPerformanceMetrics, 
-  aiCostAnalysis, 
-  aiOptimizationSuggestions 
-} from "~/features/lukas-ai/schema";
+import db from "~/core/db/drizzle-client.server";
+import {
+  aiUsageTracking,
+  aiPerformanceMetrics,
+  aiCostAnalysis,
+  aiOptimizationSuggestions,
+} from "../schema";
 
-// Usage tracking schema
-const usageTrackingSchema = z.object({
-  feature: z.enum(["chat", "document_qa", "meeting_summary", "workflow"]),
-  model: z.string().min(1, "모델명을 입력해주세요"),
-  tokensUsed: z.number().min(1, "토큰 사용량을 입력해주세요"),
-  inputTokens: z.number().min(0, "입력 토큰 수를 입력해주세요"),
-  outputTokens: z.number().min(0, "출력 토큰 수를 입력해주세요"),
-  cost: z.number().optional(),
-  responseTime: z.number().optional(),
-  success: z.boolean().default(true),
-  errorMessage: z.string().optional(),
-  metadata: z.record(z.any()).optional(),
-});
-
-// Performance metric schema
-const performanceMetricSchema = z.object({
-  feature: z.string().min(1, "기능명을 입력해주세요"),
-  metric: z.enum(["accuracy", "response_time", "user_satisfaction"]),
-  value: z.number().min(0, "값을 입력해주세요"),
-  unit: z.string().optional(),
-  date: z.string().datetime("날짜를 입력해주세요"),
-  context: z.record(z.any()).optional(),
-});
-
-// Cost analysis schema
-const costAnalysisSchema = z.object({
-  period: z.enum(["daily", "weekly", "monthly"]),
-  startDate: z.string().datetime("시작 날짜를 입력해주세요"),
-  endDate: z.string().datetime("종료 날짜를 입력해주세요"),
-  totalCost: z.number().min(0, "총 비용을 입력해주세요"),
-  featureCosts: z.record(z.number()).optional(),
-  tokenUsage: z.record(z.number()).optional(),
-  predictions: z.record(z.any()).optional(),
-});
-
-// Optimization suggestion schema
-const optimizationSuggestionSchema = z.object({
-  category: z.enum(["cost", "performance", "usage"]),
-  title: z.string().min(1, "제목을 입력해주세요"),
-  description: z.string().min(1, "설명을 입력해주세요"),
-  impact: z.enum(["high", "medium", "low"]),
-  estimatedSavings: z.number().optional(),
-  implementation: z.string().optional(),
-});
-
-export async function loader({ request }: LoaderFunctionArgs) {
+export async function loader({ request }: any) {
   const user = await requireUser(request);
-  const url = new URL(request.url);
-  const period = url.searchParams.get("period") || "month";
-  const feature = url.searchParams.get("feature");
   
-  // Calculate date range
-  const now = new Date();
-  const startDate = new Date();
-  switch (period) {
-    case "week":
-      startDate.setDate(now.getDate() - 7);
-      break;
-    case "month":
-      startDate.setMonth(now.getMonth() - 1);
-      break;
-    case "quarter":
-      startDate.setMonth(now.getMonth() - 3);
-      break;
-    default:
-      startDate.setMonth(now.getMonth() - 1);
-  }
-
-  // Get usage statistics
-  let usageQuery = db
+  // Get usage statistics for the last 30 days
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  
+  const usageStats = await db
     .select({
       feature: aiUsageTracking.feature,
-      totalTokens: sum(aiUsageTracking.tokensUsed),
-      totalCost: sum(aiUsageTracking.cost),
-      totalRequests: count(aiUsageTracking.id),
-      avgResponseTime: avg(aiUsageTracking.responseTime),
+      totalTokens: sql<number>`SUM(${aiUsageTracking.tokensUsed})`,
+      totalCost: sql<number>`SUM(${aiUsageTracking.cost})`,
+      avgResponseTime: sql<number>`AVG(${aiUsageTracking.responseTime})`,
+      successRate: sql<number>`(COUNT(CASE WHEN ${aiUsageTracking.success} THEN 1 END) * 100.0 / COUNT(*))`,
     })
     .from(aiUsageTracking)
     .where(
       and(
         eq(aiUsageTracking.userId, user.id),
-        gte(aiUsageTracking.created_at, startDate)
+        gte(aiUsageTracking.created_at, thirtyDaysAgo)
       )
     )
     .groupBy(aiUsageTracking.feature);
 
-  if (feature) {
-    usageQuery = usageQuery.where(eq(aiUsageTracking.feature, feature));
-  }
-
-  const usageStats = await usageQuery;
+  // Get recent usage (last 10 entries)
+  const recentUsage = await db
+    .select({
+      id: aiUsageTracking.id,
+      feature: aiUsageTracking.feature,
+      model: aiUsageTracking.model,
+      tokensUsed: aiUsageTracking.tokensUsed,
+      cost: aiUsageTracking.cost,
+      responseTime: aiUsageTracking.responseTime,
+      success: aiUsageTracking.success,
+      created_at: aiUsageTracking.created_at,
+    })
+    .from(aiUsageTracking)
+    .where(eq(aiUsageTracking.userId, user.id))
+    .orderBy(sql`${aiUsageTracking.created_at} DESC`)
+    .limit(10);
 
   // Get performance metrics
   const performanceMetrics = await db
-    .select()
+    .select({
+      id: aiPerformanceMetrics.id,
+      feature: aiPerformanceMetrics.feature,
+      metric: aiPerformanceMetrics.metric,
+      value: aiPerformanceMetrics.value,
+      unit: aiPerformanceMetrics.unit,
+      date: aiPerformanceMetrics.date,
+    })
     .from(aiPerformanceMetrics)
-    .where(
-      and(
-        eq(aiPerformanceMetrics.userId, user.id),
-        gte(aiPerformanceMetrics.date, startDate)
-      )
-    )
-    .orderBy(desc(aiPerformanceMetrics.date));
+    .where(eq(aiPerformanceMetrics.userId, user.id))
+    .orderBy(sql`${aiPerformanceMetrics.date} DESC`)
+    .limit(20);
 
   // Get cost analysis
   const costAnalysis = await db
-    .select()
+    .select({
+      id: aiCostAnalysis.id,
+      period: aiCostAnalysis.period,
+      startDate: aiCostAnalysis.startDate,
+      endDate: aiCostAnalysis.endDate,
+      totalCost: aiCostAnalysis.totalCost,
+      featureCosts: aiCostAnalysis.featureCosts,
+      tokenUsage: aiCostAnalysis.tokenUsage,
+    })
     .from(aiCostAnalysis)
-    .where(
-      and(
-        eq(aiCostAnalysis.userId, user.id),
-        gte(aiCostAnalysis.startDate, startDate)
-      )
-    )
-    .orderBy(desc(aiCostAnalysis.startDate));
+    .where(eq(aiCostAnalysis.userId, user.id))
+    .orderBy(sql`${aiCostAnalysis.startDate} DESC`)
+    .limit(10);
 
   // Get optimization suggestions
   const optimizationSuggestions = await db
-    .select()
+    .select({
+      id: aiOptimizationSuggestions.id,
+      category: aiOptimizationSuggestions.category,
+      title: aiOptimizationSuggestions.title,
+      description: aiOptimizationSuggestions.description,
+      impact: aiOptimizationSuggestions.impact,
+      estimatedSavings: aiOptimizationSuggestions.estimatedSavings,
+      implementation: aiOptimizationSuggestions.implementation,
+      isApplied: aiOptimizationSuggestions.isApplied,
+    })
     .from(aiOptimizationSuggestions)
     .where(eq(aiOptimizationSuggestions.userId, user.id))
-    .orderBy(desc(aiOptimizationSuggestions.created_at));
+    .orderBy(sql`${aiOptimizationSuggestions.created_at} DESC`)
+    .limit(10);
 
-  // Get recent usage data for charts
-  const recentUsage = await db
-    .select()
-    .from(aiUsageTracking)
-    .where(
-      and(
-        eq(aiUsageTracking.userId, user.id),
-        gte(aiUsageTracking.created_at, startDate)
-      )
-    )
-    .orderBy(desc(aiUsageTracking.created_at))
-    .limit(50);
-
-  // Calculate summary statistics
-  const totalCost = usageStats.reduce((sum: number, stat: any) => sum + (Number(stat.totalCost) || 0), 0);
-  const totalTokens = usageStats.reduce((sum: number, stat: any) => sum + (Number(stat.totalTokens) || 0), 0);
-  const totalRequests = usageStats.reduce((sum: number, stat: any) => sum + (Number(stat.totalRequests) || 0), 0);
-
-  return json({
+  return data({
     usageStats,
+    recentUsage,
     performanceMetrics,
     costAnalysis,
     optimizationSuggestions,
-    recentUsage,
-    summary: {
-      totalCost,
-      totalTokens,
-      totalRequests,
-      period,
-      startDate,
-      endDate: now,
-    },
   });
 }
 
-export async function action({ request }: ActionFunctionArgs) {
+export async function action({ request }: any) {
   const user = await requireUser(request);
   const formData = await request.formData();
   const action = formData.get("action") as string;
 
-  try {
-    switch (action) {
-      case "track-usage": {
-        const data = usageTrackingSchema.parse({
-          feature: formData.get("feature"),
-          model: formData.get("model"),
-          tokensUsed: formData.get("tokensUsed") ? Number(formData.get("tokensUsed")) : 0,
-          inputTokens: formData.get("inputTokens") ? Number(formData.get("inputTokens")) : 0,
-          outputTokens: formData.get("outputTokens") ? Number(formData.get("outputTokens")) : 0,
-          cost: formData.get("cost") ? Number(formData.get("cost")) : undefined,
-          responseTime: formData.get("responseTime") ? Number(formData.get("responseTime")) : undefined,
-          success: formData.get("success") === "true",
-          errorMessage: formData.get("errorMessage"),
-          metadata: formData.get("metadata") ? JSON.parse(formData.get("metadata") as string) : undefined,
+  switch (action) {
+    case "track_usage": {
+      const feature = formData.get("feature") as string;
+      const model = formData.get("model") as string;
+      const tokensUsed = parseInt(formData.get("tokensUsed") as string);
+      const inputTokens = parseInt(formData.get("inputTokens") as string);
+      const outputTokens = parseInt(formData.get("outputTokens") as string);
+      const cost = parseFloat(formData.get("cost") as string) || 0;
+      const responseTime = parseInt(formData.get("responseTime") as string) || 0;
+      const success = formData.get("success") === "true";
+      const errorMessage = formData.get("errorMessage") as string;
+      const metadata = formData.get("metadata") ? JSON.parse(formData.get("metadata") as string) : null;
+
+      await db
+        .insert(aiUsageTracking)
+        .values({
+          userId: user.id,
+          feature,
+          model,
+          tokensUsed,
+          inputTokens,
+          outputTokens,
+          cost: cost.toString(),
+          responseTime,
+          success,
+          errorMessage,
+          metadata,
         });
 
-        const [usage] = await db
-          .insert(aiUsageTracking)
-          .values({
-            userId: user.id,
-            ...data,
-          })
-          .returning();
-
-        return json({ success: true, usage });
-      }
-
-      case "add-performance-metric": {
-        const data = performanceMetricSchema.parse({
-          feature: formData.get("feature"),
-          metric: formData.get("metric"),
-          value: formData.get("value") ? Number(formData.get("value")) : 0,
-          unit: formData.get("unit"),
-          date: formData.get("date"),
-          context: formData.get("context") ? JSON.parse(formData.get("context") as string) : undefined,
-        });
-
-        const [metric] = await db
-          .insert(aiPerformanceMetrics)
-          .values({
-            userId: user.id,
-            ...data,
-          })
-          .returning();
-
-        return json({ success: true, metric });
-      }
-
-      case "add-cost-analysis": {
-        const data = costAnalysisSchema.parse({
-          period: formData.get("period"),
-          startDate: formData.get("startDate"),
-          endDate: formData.get("endDate"),
-          totalCost: formData.get("totalCost") ? Number(formData.get("totalCost")) : 0,
-          featureCosts: formData.get("featureCosts") ? JSON.parse(formData.get("featureCosts") as string) : undefined,
-          tokenUsage: formData.get("tokenUsage") ? JSON.parse(formData.get("tokenUsage") as string) : undefined,
-          predictions: formData.get("predictions") ? JSON.parse(formData.get("predictions") as string) : undefined,
-        });
-
-        const [analysis] = await db
-          .insert(aiCostAnalysis)
-          .values({
-            userId: user.id,
-            ...data,
-          })
-          .returning();
-
-        return json({ success: true, analysis });
-      }
-
-      case "add-optimization-suggestion": {
-        const data = optimizationSuggestionSchema.parse({
-          category: formData.get("category"),
-          title: formData.get("title"),
-          description: formData.get("description"),
-          impact: formData.get("impact"),
-          estimatedSavings: formData.get("estimatedSavings") ? Number(formData.get("estimatedSavings")) : undefined,
-          implementation: formData.get("implementation"),
-        });
-
-        const [suggestion] = await db
-          .insert(aiOptimizationSuggestions)
-          .values({
-            userId: user.id,
-            ...data,
-          })
-          .returning();
-
-        return json({ success: true, suggestion });
-      }
-
-      case "apply-optimization": {
-        const suggestionId = formData.get("suggestionId") as string;
-        
-        const [suggestion] = await db
-          .update(aiOptimizationSuggestions)
-          .set({ 
-            isApplied: true,
-            appliedDate: new Date(),
-          })
-          .where(eq(aiOptimizationSuggestions.id, suggestionId))
-          .returning();
-
-        return json({ success: true, suggestion });
-      }
-
-      case "delete-suggestion": {
-        const suggestionId = formData.get("suggestionId") as string;
-        
-        await db
-          .delete(aiOptimizationSuggestions)
-          .where(eq(aiOptimizationSuggestions.id, suggestionId));
-
-        return json({ success: true });
-      }
-
-      default:
-        return json({ error: "Invalid action" }, { status: 400 });
+      return data({ success: true });
     }
-  } catch (error) {
-    console.error("Analytics action error:", error);
-    return json({ error: "Internal server error" }, { status: 500 });
-  }
-}
 
-export function useAnalyticsData() {
-  return useLoaderData<typeof loader>();
+    case "track_performance": {
+      const feature = formData.get("feature") as string;
+      const metric = formData.get("metric") as string;
+      const value = parseFloat(formData.get("value") as string);
+      const unit = formData.get("unit") as string;
+      const date = new Date(formData.get("date") as string);
+      const context = formData.get("context") ? JSON.parse(formData.get("context") as string) : null;
+
+      await db
+        .insert(aiPerformanceMetrics)
+        .values({
+          userId: user.id,
+          feature,
+          metric,
+          value: value.toString(),
+          unit,
+          date,
+          context,
+        });
+
+      return data({ success: true });
+    }
+
+    case "track_cost": {
+      const period = formData.get("period") as string;
+      const startDate = new Date(formData.get("startDate") as string);
+      const endDate = new Date(formData.get("endDate") as string);
+      const totalCost = parseFloat(formData.get("totalCost") as string);
+      const featureCosts = formData.get("featureCosts") ? JSON.parse(formData.get("featureCosts") as string) : null;
+      const tokenUsage = formData.get("tokenUsage") ? JSON.parse(formData.get("tokenUsage") as string) : null;
+      const predictions = formData.get("predictions") ? JSON.parse(formData.get("predictions") as string) : null;
+
+      await db
+        .insert(aiCostAnalysis)
+        .values({
+          userId: user.id,
+          period,
+          startDate,
+          endDate,
+          totalCost: totalCost.toString(),
+          featureCosts,
+          tokenUsage,
+          predictions,
+        });
+
+      return data({ success: true });
+    }
+
+    case "add_optimization": {
+      const category = formData.get("category") as string;
+      const title = formData.get("title") as string;
+      const description = formData.get("description") as string;
+      const impact = formData.get("impact") as string;
+      const estimatedSavings = parseFloat(formData.get("estimatedSavings") as string) || 0;
+      const implementation = formData.get("implementation") as string;
+
+      await db
+        .insert(aiOptimizationSuggestions)
+        .values({
+          userId: user.id,
+          category,
+          title,
+          description,
+          impact,
+          estimatedSavings: estimatedSavings.toString(),
+          implementation,
+        });
+
+      return data({ success: true });
+    }
+
+    default:
+      return data({ error: "Invalid action" }, { status: 400 });
+  }
 } 
