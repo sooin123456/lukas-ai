@@ -1,6 +1,8 @@
-import { json } from "react-router";
-import { type LoaderFunctionArgs, type ActionFunctionArgs } from "react-router";
+import { data } from "react-router";
+import { z } from "zod";
 import { eq, and, gte, lte, sql } from "drizzle-orm";
+
+import { requireUser } from "~/core/lib/guards.server";
 import db from "~/core/db/drizzle-client.server";
 import {
   aiUsageTracking,
@@ -11,17 +13,18 @@ import {
 
 // Temporary requireUser function until we fix the import
 async function requireUser(request: Request) {
-  // This is a simplified version - you'll need to implement proper auth
+  // This is a temporary implementation
   return { id: "temp-user-id" };
 }
 
-export async function loader({ request }: LoaderFunctionArgs) {
+export async function loader({ request }: any) {
   const user = await requireUser(request);
   
   // Get usage statistics for the last 30 days
   const thirtyDaysAgo = new Date();
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  
+
+  // Get usage statistics grouped by feature
   const usageStats = await db
     .select({
       feature: aiUsageTracking.feature,
@@ -104,7 +107,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     .orderBy(sql`${aiOptimizationSuggestions.created_at} DESC`)
     .limit(10);
 
-  return json({
+  return data({
     usageStats,
     recentUsage,
     performanceMetrics,
@@ -113,116 +116,90 @@ export async function loader({ request }: LoaderFunctionArgs) {
   });
 }
 
-export async function action({ request }: ActionFunctionArgs) {
+export async function action({ request }: any) {
   const user = await requireUser(request);
   const formData = await request.formData();
-  const action = formData.get("action") as string;
+  const action = formData.get("action");
 
   switch (action) {
-    case "track_usage": {
-      const feature = formData.get("feature") as string;
-      const model = formData.get("model") as string;
-      const tokensUsed = parseInt(formData.get("tokensUsed") as string);
-      const inputTokens = parseInt(formData.get("inputTokens") as string);
-      const outputTokens = parseInt(formData.get("outputTokens") as string);
-      const cost = parseFloat(formData.get("cost") as string) || 0;
-      const responseTime = parseInt(formData.get("responseTime") as string) || 0;
-      const success = formData.get("success") === "true";
-      const errorMessage = formData.get("errorMessage") as string;
-      const metadata = formData.get("metadata") ? JSON.parse(formData.get("metadata") as string) : null;
+    case "trackUsage": {
+      const { feature, model, tokensUsed, cost, responseTime, success } = 
+        Object.fromEntries(formData);
 
       await db
         .insert(aiUsageTracking)
         .values({
           userId: user.id,
-          feature,
-          model,
-          tokensUsed,
-          inputTokens,
-          outputTokens,
-          cost: cost.toString(),
-          responseTime,
-          success,
-          errorMessage,
-          metadata,
+          feature: feature as string,
+          model: model as string,
+          tokensUsed: parseInt(tokensUsed as string),
+          cost: parseFloat(cost as string),
+          responseTime: parseInt(responseTime as string),
+          success: success === "true",
+          created_at: new Date(),
         });
 
-      return json({ success: true });
+      return data({ success: true });
     }
 
-    case "track_performance": {
-      const feature = formData.get("feature") as string;
-      const metric = formData.get("metric") as string;
-      const value = parseFloat(formData.get("value") as string);
-      const unit = formData.get("unit") as string;
-      const date = new Date(formData.get("date") as string);
-      const context = formData.get("context") ? JSON.parse(formData.get("context") as string) : null;
+    case "trackPerformance": {
+      const { feature, metric, value, unit } = Object.fromEntries(formData);
 
       await db
         .insert(aiPerformanceMetrics)
         .values({
           userId: user.id,
-          feature,
-          metric,
-          value: value.toString(),
-          unit,
-          date,
-          context,
+          feature: feature as string,
+          metric: metric as string,
+          value: parseFloat(value as string),
+          unit: unit as string,
+          date: new Date(),
         });
 
-      return json({ success: true });
+      return data({ success: true });
     }
 
-    case "track_cost": {
-      const period = formData.get("period") as string;
-      const startDate = new Date(formData.get("startDate") as string);
-      const endDate = new Date(formData.get("endDate") as string);
-      const totalCost = parseFloat(formData.get("totalCost") as string);
-      const featureCosts = formData.get("featureCosts") ? JSON.parse(formData.get("featureCosts") as string) : null;
-      const tokenUsage = formData.get("tokenUsage") ? JSON.parse(formData.get("tokenUsage") as string) : null;
-      const predictions = formData.get("predictions") ? JSON.parse(formData.get("predictions") as string) : null;
+    case "trackCost": {
+      const { period, startDate, endDate, totalCost, featureCosts, tokenUsage } = 
+        Object.fromEntries(formData);
 
       await db
         .insert(aiCostAnalysis)
         .values({
           userId: user.id,
-          period,
-          startDate,
-          endDate,
-          totalCost: totalCost.toString(),
-          featureCosts,
-          tokenUsage,
-          predictions,
+          period: period as string,
+          startDate: new Date(startDate as string),
+          endDate: new Date(endDate as string),
+          totalCost: parseFloat(totalCost as string),
+          featureCosts: featureCosts as string,
+          tokenUsage: parseInt(tokenUsage as string),
         });
 
-      return json({ success: true });
+      return data({ success: true });
     }
 
-    case "add_optimization": {
-      const category = formData.get("category") as string;
-      const title = formData.get("title") as string;
-      const description = formData.get("description") as string;
-      const impact = formData.get("impact") as string;
-      const estimatedSavings = parseFloat(formData.get("estimatedSavings") as string) || 0;
-      const implementation = formData.get("implementation") as string;
+    case "addOptimization": {
+      const { category, title, description, impact, estimatedSavings, implementation } = 
+        Object.fromEntries(formData);
 
       await db
         .insert(aiOptimizationSuggestions)
         .values({
           userId: user.id,
-          category,
-          title,
-          description,
-          impact,
-          estimatedSavings: estimatedSavings.toString(),
-          implementation,
+          category: category as string,
+          title: title as string,
+          description: description as string,
+          impact: impact as string,
+          estimatedSavings: parseFloat(estimatedSavings as string),
+          implementation: implementation as string,
           isApplied: false,
+          created_at: new Date(),
         });
 
-      return json({ success: true });
+      return data({ success: true });
     }
 
-    case "apply_optimization": {
+    case "applyOptimization": {
       const suggestionId = formData.get("suggestionId") as string;
 
       await db
@@ -233,10 +210,10 @@ export async function action({ request }: ActionFunctionArgs) {
         })
         .where(eq(aiOptimizationSuggestions.id, suggestionId));
 
-      return json({ success: true });
+      return data({ success: true });
     }
 
     default:
-      return json({ error: "Invalid action" }, { status: 400 });
+      return data({ error: "Invalid action" }, { status: 400 });
   }
 } 

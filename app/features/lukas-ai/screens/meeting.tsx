@@ -11,11 +11,12 @@
 import type { Route } from "./+types/meeting";
 
 import { useState, useRef, useEffect } from "react";
-import { useTranslation } from "react-i18next";
-import { json } from "react-router";
-import { type LoaderFunctionArgs, type ActionFunctionArgs } from "react-router";
-import { useLoaderData, useFetcher } from "react-router";
-import { eq, and, gte, lte, sql } from "drizzle-orm";
+import { useLoaderData, useActionData, Form } from "react-router";
+import { data } from "react-router";
+import { z } from "zod";
+import { eq, and, desc } from "drizzle-orm";
+
+import { requireUser } from "~/core/lib/guards.server";
 import db from "~/core/db/drizzle-client.server";
 import {
   meetingSessions,
@@ -80,7 +81,7 @@ async function requireUser(request: Request) {
   return { id: "temp-user-id" };
 }
 
-export async function loader({ request }: LoaderFunctionArgs) {
+export async function loader({ request }: any) {
   const user = await requireUser(request);
   
   // Get recent meeting sessions
@@ -97,7 +98,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     })
     .from(meetingSessions)
     .where(eq(meetingSessions.userId, user.id))
-    .orderBy(sql`${meetingSessions.startTime} DESC`)
+    .orderBy(desc(meetingSessions.startTime))
     .limit(10);
 
   // Get recent transcripts
@@ -113,7 +114,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
     })
     .from(meetingTranscripts)
     .where(eq(meetingTranscripts.meetingId, meetingSessions.id))
-    .orderBy(sql`${meetingTranscripts.timestamp} DESC`)
+    .orderBy(desc(meetingTranscripts.timestamp))
     .limit(50);
 
   // Get recent summaries
@@ -130,17 +131,17 @@ export async function loader({ request }: LoaderFunctionArgs) {
     })
     .from(meetingSummaries)
     .where(eq(meetingSummaries.meetingId, meetingSessions.id))
-    .orderBy(sql`${meetingSummaries.created_at} DESC`)
+    .orderBy(desc(meetingSummaries.created_at))
     .limit(5);
 
-  return json({
+  return {
     sessions,
     transcripts,
     summaries,
-  });
+  };
 }
 
-export async function action({ request }: ActionFunctionArgs) {
+export async function action({ request }: any) {
   const user = await requireUser(request);
   const formData = await request.formData();
   const action = formData.get("action") as string;
@@ -165,7 +166,7 @@ export async function action({ request }: ActionFunctionArgs) {
         })
         .returning();
 
-      return json({ success: true, session });
+      return { success: true, session };
     }
 
     case "end_session": {
@@ -180,7 +181,7 @@ export async function action({ request }: ActionFunctionArgs) {
         })
         .where(eq(meetingSessions.id, sessionId));
 
-      return json({ success: true });
+      return { success: true };
     }
 
     case "add_transcript": {
@@ -202,7 +203,7 @@ export async function action({ request }: ActionFunctionArgs) {
           confidence,
         });
 
-      return json({ success: true });
+      return { success: true };
     }
 
     case "generate_summary": {
@@ -224,11 +225,11 @@ export async function action({ request }: ActionFunctionArgs) {
           nextSteps,
         });
 
-      return json({ success: true });
+      return { success: true };
     }
 
     default:
-      return json({ error: "Invalid action" }, { status: 400 });
+      return { error: "Invalid action" };
   }
 }
 
@@ -258,9 +259,8 @@ interface Transcript {
  * Meeting component
  */
 export default function MeetingScreen() {
-  const { t } = useTranslation();
   const { sessions, transcripts, summaries } = useLoaderData<typeof loader>();
-  const fetcher = useFetcher();
+  const actionData = useActionData<typeof action>();
   
   const [isRecording, setIsRecording] = useState(false);
   const [currentSession, setCurrentSession] = useState<any>(null);
@@ -354,8 +354,8 @@ export default function MeetingScreen() {
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">{t("meeting.title")}</h1>
-          <p className="text-muted-foreground">{t("meeting.description")}</p>
+          <h1 className="text-3xl font-bold">실시간 회의</h1>
+          <p className="text-muted-foreground">회의를 녹음하고 실시간으로 요약을 생성합니다</p>
         </div>
         <div className="flex items-center space-x-2">
           <Users className="h-5 w-5" />

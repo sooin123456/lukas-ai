@@ -1,6 +1,8 @@
-import { json } from "react-router";
-import { type LoaderFunctionArgs, type ActionFunctionArgs } from "react-router";
-import { eq, and, gte, lte, sql } from "drizzle-orm";
+import { data } from "react-router";
+import { z } from "zod";
+import { eq, and, gte, lte } from "drizzle-orm";
+
+import { requireUser } from "~/core/lib/guards.server";
 import db from "~/core/db/drizzle-client.server";
 import {
   calendarEvents,
@@ -12,11 +14,11 @@ import {
 
 // Temporary requireUser function until we fix the import
 async function requireUser(request: Request) {
-  // This is a simplified version - you'll need to implement proper auth
+  // This is a temporary implementation
   return { id: "temp-user-id" };
 }
 
-export async function loader({ request }: LoaderFunctionArgs) {
+export async function loader({ request }: any) {
   const user = await requireUser(request);
   
   // Get calendar events
@@ -27,18 +29,15 @@ export async function loader({ request }: LoaderFunctionArgs) {
       description: calendarEvents.description,
       startTime: calendarEvents.startTime,
       endTime: calendarEvents.endTime,
-      type: calendarEvents.type,
-      priority: calendarEvents.priority,
-      status: calendarEvents.status,
       location: calendarEvents.location,
       attendees: calendarEvents.attendees,
-      recurrence: calendarEvents.recurrence,
-      reminders: calendarEvents.reminders,
-      tags: calendarEvents.tags,
+      isRecurring: calendarEvents.isRecurring,
+      recurrenceRule: calendarEvents.recurrenceRule,
+      created_at: calendarEvents.created_at,
     })
     .from(calendarEvents)
     .where(eq(calendarEvents.userId, user.id))
-    .orderBy(sql`${calendarEvents.startTime} ASC`);
+    .orderBy(calendarEvents.startTime);
 
   // Get automated tasks
   const tasks = await db
@@ -46,22 +45,16 @@ export async function loader({ request }: LoaderFunctionArgs) {
       id: automatedTasks.id,
       name: automatedTasks.name,
       description: automatedTasks.description,
-      type: automatedTasks.type,
-      trigger: automatedTasks.trigger,
-      triggerConfig: automatedTasks.triggerConfig,
-      action: automatedTasks.action,
-      actionConfig: automatedTasks.actionConfig,
+      taskType: automatedTasks.taskType,
+      schedule: automatedTasks.schedule,
       isActive: automatedTasks.isActive,
-      lastExecuted: automatedTasks.lastExecuted,
-      nextExecution: automatedTasks.nextExecution,
-      executionCount: automatedTasks.executionCount,
-      successCount: automatedTasks.successCount,
-      failureCount: automatedTasks.failureCount,
+      lastRun: automatedTasks.lastRun,
+      nextRun: automatedTasks.nextRun,
       created_at: automatedTasks.created_at,
     })
     .from(automatedTasks)
     .where(eq(automatedTasks.userId, user.id))
-    .orderBy(sql`${automatedTasks.created_at} DESC`);
+    .orderBy(automatedTasks.created_at);
 
   // Get task executions
   const executions = await db
@@ -71,13 +64,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
       status: taskExecutions.status,
       startTime: taskExecutions.startTime,
       endTime: taskExecutions.endTime,
-      duration: taskExecutions.duration,
       result: taskExecutions.result,
-      error: taskExecutions.error,
+      errorMessage: taskExecutions.errorMessage,
+      created_at: taskExecutions.created_at,
     })
     .from(taskExecutions)
-    .where(eq(taskExecutions.taskId, automatedTasks.id))
-    .orderBy(sql`${taskExecutions.startTime} DESC`)
+    .where(eq(taskExecutions.userId, user.id))
+    .orderBy(taskExecutions.created_at)
     .limit(20);
 
   // Get time tracking entries
@@ -85,43 +78,42 @@ export async function loader({ request }: LoaderFunctionArgs) {
     .select({
       id: timeTracking.id,
       taskName: timeTracking.taskName,
-      category: timeTracking.category,
+      description: timeTracking.description,
       startTime: timeTracking.startTime,
       endTime: timeTracking.endTime,
       duration: timeTracking.duration,
-      description: timeTracking.description,
-      tags: timeTracking.tags,
+      category: timeTracking.category,
+      created_at: timeTracking.created_at,
     })
     .from(timeTracking)
     .where(eq(timeTracking.userId, user.id))
-    .orderBy(sql`${timeTracking.startTime} DESC`)
+    .orderBy(timeTracking.startTime)
     .limit(50);
 
   // Get workflows
-  const userWorkflows = await db
+  const workflows = await db
     .select({
       id: workflows.id,
       name: workflows.name,
       description: workflows.description,
       steps: workflows.steps,
-      triggers: workflows.triggers,
       isActive: workflows.isActive,
-      executionCount: workflows.executionCount,
+      created_at: workflows.created_at,
     })
     .from(workflows)
     .where(eq(workflows.userId, user.id))
-    .orderBy(sql`${workflows.created_at} DESC`);
+    .orderBy(workflows.created_at);
 
-  return json({
+  return data({
     events,
     tasks,
     executions,
     timeEntries,
-    workflows: userWorkflows,
+    workflows,
   });
 }
 
-export async function action({ request }: ActionFunctionArgs) {
+export async function action({ request }: any) {
   const user = await requireUser(request);
   const formData = await request.formData();
   const action = formData.get("action") as string;
@@ -132,14 +124,10 @@ export async function action({ request }: ActionFunctionArgs) {
       const description = formData.get("description") as string;
       const startTime = new Date(formData.get("startTime") as string);
       const endTime = new Date(formData.get("endTime") as string);
-      const type = formData.get("type") as string;
-      const priority = formData.get("priority") as string;
-      const status = formData.get("status") as string;
       const location = formData.get("location") as string;
       const attendees = formData.get("attendees") ? JSON.parse(formData.get("attendees") as string) : [];
-      const recurrence = formData.get("recurrence") ? JSON.parse(formData.get("recurrence") as string) : null;
-      const reminders = formData.get("reminders") ? JSON.parse(formData.get("reminders") as string) : null;
-      const tags = formData.get("tags") ? JSON.parse(formData.get("tags") as string) : null;
+      const isRecurring = formData.get("isRecurring") === "true";
+      const recurrenceRule = formData.get("recurrenceRule") as string;
 
       await db
         .insert(calendarEvents)
@@ -149,27 +137,20 @@ export async function action({ request }: ActionFunctionArgs) {
           description,
           startTime,
           endTime,
-          type,
-          priority,
-          status,
           location,
           attendees,
-          recurrence,
-          reminders,
-          tags,
+          isRecurring,
+          recurrenceRule,
         });
 
-      return json({ success: true });
+      return data({ success: true });
     }
 
     case "create_task": {
       const name = formData.get("name") as string;
       const description = formData.get("description") as string;
-      const type = formData.get("type") as string;
-      const trigger = formData.get("trigger") as string;
-      const triggerConfig = formData.get("triggerConfig") ? JSON.parse(formData.get("triggerConfig") as string) : null;
-      const action = formData.get("action") as string;
-      const actionConfig = formData.get("actionConfig") ? JSON.parse(formData.get("actionConfig") as string) : null;
+      const taskType = formData.get("taskType") as string;
+      const schedule = formData.get("schedule") as string;
       const isActive = formData.get("isActive") === "true";
 
       await db
@@ -178,64 +159,42 @@ export async function action({ request }: ActionFunctionArgs) {
           userId: user.id,
           name,
           description,
-          type,
-          trigger,
-          triggerConfig,
-          action,
-          actionConfig,
+          taskType,
+          schedule,
           isActive,
-          lastExecuted: null,
-          nextExecution: new Date(), // Calculate based on trigger
-          executionCount: 0,
-          successCount: 0,
-          failureCount: 0,
         });
 
-      return json({ success: true });
+      return data({ success: true });
     }
 
-    case "start_time_tracking": {
+    case "track_time": {
       const taskName = formData.get("taskName") as string;
-      const category = formData.get("category") as string;
       const description = formData.get("description") as string;
-      const tags = formData.get("tags") ? JSON.parse(formData.get("tags") as string) : [];
+      const startTime = new Date(formData.get("startTime") as string);
+      const endTime = new Date(formData.get("endTime") as string);
+      const duration = parseInt(formData.get("duration") as string);
+      const category = formData.get("category") as string;
 
       await db
         .insert(timeTracking)
         .values({
           userId: user.id,
           taskName,
-          category,
-          startTime: new Date(),
-          endTime: null,
-          duration: 0,
           description,
-          tags,
+          startTime,
+          endTime,
+          duration,
+          category,
         });
 
-      return json({ success: true });
-    }
-
-    case "stop_time_tracking": {
-      const trackingId = formData.get("trackingId") as string;
-      const endTime = new Date();
-
-      await db
-        .update(timeTracking)
-        .set({
-          endTime,
-          duration: sql`EXTRACT(EPOCH FROM (${endTime} - start_time))`,
-        })
-        .where(eq(timeTracking.id, trackingId));
-
-      return json({ success: true });
+      return data({ success: true });
     }
 
     case "create_workflow": {
       const name = formData.get("name") as string;
       const description = formData.get("description") as string;
       const steps = JSON.parse(formData.get("steps") as string);
-      const triggers = formData.get("triggers") ? JSON.parse(formData.get("triggers") as string) : null;
+      const isActive = formData.get("isActive") === "true";
 
       await db
         .insert(workflows)
@@ -244,12 +203,10 @@ export async function action({ request }: ActionFunctionArgs) {
           name,
           description,
           steps,
-          triggers,
-          isActive: true,
-          executionCount: 0,
+          isActive,
         });
 
-      return json({ success: true });
+      return data({ success: true });
     }
 
     case "delete_event": {
@@ -259,7 +216,7 @@ export async function action({ request }: ActionFunctionArgs) {
         .delete(calendarEvents)
         .where(eq(calendarEvents.id, eventId));
 
-      return json({ success: true });
+      return data({ success: true });
     }
 
     case "delete_task": {
@@ -269,7 +226,7 @@ export async function action({ request }: ActionFunctionArgs) {
         .delete(automatedTasks)
         .where(eq(automatedTasks.id, taskId));
 
-      return json({ success: true });
+      return data({ success: true });
     }
 
     case "delete_workflow": {
@@ -279,10 +236,10 @@ export async function action({ request }: ActionFunctionArgs) {
         .delete(workflows)
         .where(eq(workflows.id, workflowId));
 
-      return json({ success: true });
+      return data({ success: true });
     }
 
     default:
-      return json({ error: "Invalid action" }, { status: 400 });
+      return data({ error: "Invalid action" }, { status: 400 });
   }
 } 

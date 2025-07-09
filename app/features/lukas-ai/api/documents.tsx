@@ -1,6 +1,8 @@
-import { json } from "react-router";
-import { type LoaderFunctionArgs, type ActionFunctionArgs } from "react-router";
-import { eq, and, gte, lte, sql } from "drizzle-orm";
+import { data } from "react-router";
+import { z } from "zod";
+import { eq, and, like, desc, sql } from "drizzle-orm";
+
+import { requireUser } from "~/core/lib/guards.server";
 import db from "~/core/db/drizzle-client.server";
 import {
   companyDocuments,
@@ -11,11 +13,11 @@ import {
 
 // Temporary requireUser function until we fix the import
 async function requireUser(request: Request) {
-  // This is a simplified version - you'll need to implement proper auth
+  // This is a temporary implementation
   return { id: "temp-user-id" };
 }
 
-export async function loader({ request }: LoaderFunctionArgs) {
+export async function loader({ request }: any) {
   const user = await requireUser(request);
   
   // Get user's documents
@@ -65,14 +67,14 @@ export async function loader({ request }: LoaderFunctionArgs) {
     .orderBy(sql`${documentQA.created_at} DESC`)
     .limit(10);
 
-  return json({
+  return data({
     documents,
     knowledgeEntries,
     recentQa,
   });
 }
 
-export async function action({ request }: ActionFunctionArgs) {
+export async function action({ request }: any) {
   const user = await requireUser(request);
   const formData = await request.formData();
   const action = formData.get("action") as string;
@@ -104,7 +106,7 @@ export async function action({ request }: ActionFunctionArgs) {
         })
         .returning();
 
-      return json({ success: true, document });
+      return data({ success: true, document });
     }
 
     case "process_document": {
@@ -129,7 +131,7 @@ export async function action({ request }: ActionFunctionArgs) {
         .set({ status: "completed" })
         .where(eq(companyDocuments.id, documentId));
 
-      return json({ success: true });
+      return data({ success: true });
     }
 
     case "add_knowledge": {
@@ -150,7 +152,7 @@ export async function action({ request }: ActionFunctionArgs) {
           sourceDocuments,
         });
 
-      return json({ success: true });
+      return data({ success: true });
     }
 
     case "ask_question": {
@@ -171,7 +173,7 @@ export async function action({ request }: ActionFunctionArgs) {
           confidence,
         });
 
-      return json({ success: true });
+      return data({ success: true });
     }
 
     case "delete_document": {
@@ -181,7 +183,7 @@ export async function action({ request }: ActionFunctionArgs) {
         .delete(companyDocuments)
         .where(eq(companyDocuments.id, documentId));
 
-      return json({ success: true });
+      return data({ success: true });
     }
 
     case "delete_knowledge": {
@@ -191,10 +193,10 @@ export async function action({ request }: ActionFunctionArgs) {
         .delete(knowledgeBase)
         .where(eq(knowledgeBase.id, knowledgeId));
 
-      return json({ success: true });
+      return data({ success: true });
     }
 
     default:
-      return json({ error: "Invalid action" }, { status: 400 });
+      return data({ error: "Invalid action" }, { status: 400 });
   }
 } 
