@@ -12,7 +12,7 @@ const urls = (
   .map((file) => `/blog/${file.replace(".mdx", "")}`);
 
 export default {
-  ssr: false,
+  ssr: true,
   future: {
     unstable_middleware: true,
   },
